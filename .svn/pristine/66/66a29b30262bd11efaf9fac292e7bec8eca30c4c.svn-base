@@ -1,0 +1,101 @@
+package com.qbao.store.controller.v2;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.pbkdf2.Pbkdf2Util;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.user.UserCard;
+import com.qbao.store.service.UserCardService;
+import com.qbao.store.util.TokenUtil;
+
+/**
+ * 实名认证
+ * <p>
+ * Created by hunsy on 2017/6/1.
+ */
+@Controller
+@RequestMapping(value = "v2/idcard")
+public class V2UserCardController extends IBaseController {
+
+    @Autowired
+    private UserCardService userCardService;
+
+    /**
+     * 实名认证
+     *
+     * @param buId        Buid
+     * @param clientId    clientId
+     * @param name        姓名
+     * @param card        身份证号
+     * @param accessToken AccessToken
+     * @return
+     */
+    @RequestMapping(value = "attestation", method = RequestMethod.POST)
+    @ResponseBody
+    public String attestation(
+            String buId,
+            String clientId,
+            String name,
+            String card,
+            String accessToken) {
+
+        try {
+
+            BUEnum buEnum = validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String uid = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            UserCard dbUserCard = userCardService.findById(uid);
+            if (dbUserCard != null) {
+                logger.error("用户已经通过验证->uid:{}", uid);
+                throw new BizException(ErrorCode.IDCARD_CHECKED.getCode());
+            }
+
+            //验证姓名
+            validateNameInner(name);
+            //验证身份证号
+            validateCardInner(card);
+
+            //保存实名认证
+            UserCard userCard = new UserCard();
+            userCard.setUid(uid);
+            userCard.setBuId(buId);
+            userCard.setCard(card);
+            userCard.setClientId(clientId);
+            userCard.setName(name);
+            userCardService.insert(userCard);
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("checked", true);
+            return JSONObject.toJSONString(BaseResponse.success(map));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+    
+   
+    public static void main(String[] args) {
+		System.out.println(Pbkdf2Util.encrypt("123456", "v1NpOJkb5P747ch9h08Bvd8kzO8XPkHQ"));
+		
+	}
+
+}

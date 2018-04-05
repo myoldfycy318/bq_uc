@@ -1,0 +1,148 @@
+package com.qbao.store.controller.user;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.user.UserCard;
+import com.qbao.store.service.UserCardService;
+import com.qbao.store.util.TokenUtil;
+
+/**
+ * idcard
+ *
+ * @author hunsy
+ */
+@Controller
+@RequestMapping(value = "idcard")
+public class UserCardController extends IBaseController {
+
+    @Autowired
+    private UserCardService userCardService;
+
+    /**
+     * 验证用户是否实名认证
+     *
+     * @param accessToken 用户登录的Token
+     * @param clientId    客户端id
+     * @param buId        BUId
+     * @return
+     */
+    @RequestMapping(value = "check", method = RequestMethod.POST)
+    @ResponseBody
+    public String check(
+            @RequestParam(value = "accessToken") String accessToken,
+            @RequestParam(value = "clientId") String clientId,
+            @RequestParam(value = "buId") String buId) {
+
+        try {
+            BUEnum bu = validateBuId(buId);
+            if (StringUtils.isEmpty(clientId) && bu != BUEnum.DOME_SDK) {
+                clientId = buId;
+            }
+            validateClientId(clientId);
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String uid = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            UserCard userCard = userCardService.findById(uid);
+            String card = "";
+            String name = "";
+            int length = 1;
+            boolean checked = false;
+            if (userCard != null) {
+                card = userCard.getCard();
+                name = userCard.getName().substring(0,1);
+                length = name.length() - 1 ;
+                checked = true;
+            }
+            Map<String, Object> map = new HashMap<>();
+            map.put("checked", checked);
+            map.put("idcard", card);
+            map.put("name",name);
+            map.put("length",length);
+            return JSONObject.toJSONString(BaseResponse.success(map));
+        } catch (Exception e) {
+            return this.handleException(e);
+        }
+    }
+
+
+    /**
+     * 实名认证
+     *
+     * @param
+     * @param accessToken 用户登录的Token
+     * @param verifyCode  验证码
+     * @return
+     */
+    @RequestMapping(value = "attestation", method = RequestMethod.POST)
+    @ResponseBody
+    public String attestation(
+    		String buId,String clientId,String mobile,String name,String card,
+    		@RequestParam(defaultValue="86")String countryCode,
+            @RequestParam(value = "accessToken") String accessToken,
+            @RequestParam(value = "verifyCode") String verifyCode
+            /*UserCard userCard*/) {
+        try {
+            BUEnum bu = validateBuId(buId);
+            if (StringUtils.isEmpty(clientId) && bu != BUEnum.DOME_SDK) {
+            	clientId = buId;
+            }
+            validateClientId(clientId);
+            //验证手机号码格式
+            validateMobileInner(mobile);
+            //验证国内姓名
+            validateNameInner(name);
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String uid = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            UserCard dbUserCard = userCardService.findById(uid);
+            if (dbUserCard != null) {
+                logger.error("用户已经通过验证->uid:{}", uid);
+                throw new BizException(ErrorCode.IDCARD_CHECKED.getCode());
+            }
+
+//			Long num = RedisUtil.incrByStep(RiskConstants.REDIS_RISK_KEY + "attestation:" + uid, 1);
+//			// 每天只能验证3次
+//			if (num >= 4) {
+//				log.error("用户认证次数达到上限:num:{}", num);
+//				throw new BizException(ErrorCode.IDCARD_CHECK_LIMIT.getCode());
+//			}
+            // 验证身份证格式
+            validateCardInner(card);
+            SMSUtils.verifySmsCode(countryCode,mobile, verifyCode, clientId, BizType.idcard.name());
+            UserCard userCard = new UserCard();
+            userCard.setUid(uid);
+            userCard.setBuId(buId);
+            userCard.setCard(card);
+            userCard.setClientId(clientId);
+            userCard.setMobile(mobile);
+            userCard.setName(name);
+            userCard.setCountryCode(countryCode);
+            userCard.setCreatedAt(new Date());
+            userCardService.insert(userCard);
+            Map<String, Object> map = new HashMap<>();
+            map.put("checked", true);
+            return JSONObject.toJSONString(BaseResponse.success(map));
+        } catch (Exception e) {
+            return this.handleException(e);
+        }
+    }
+
+
+}

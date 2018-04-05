@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.user.UserRegisterExtraBeanMapper" >
+  <resultMap id="BaseResultMap" type="com.qbao.store.entity.user.UserRegisterExtraBean" >
+    <id column="user_id" property="userId" jdbcType="VARCHAR" />
+    <result column="channel_id" property="channelId" jdbcType="VARCHAR" />
+    <result column="create_time" property="createTime" jdbcType="TIMESTAMP" />
+  </resultMap>
+  <sql id="Base_Column_List" >
+    user_id, channel_id, create_time
+  </sql>
+  <select id="selectByUserId" resultMap="BaseResultMap" parameterType="java.lang.String">
+    select 
+    <include refid="Base_Column_List" />
+    from ${tableName}
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </select>
+  
+  
+  <insert id="insert" parameterType="com.qbao.store.entity.user.UserRegisterExtraBean" >
+    insert into ${tableName}
+    <trim prefix="(" suffix=")" suffixOverrides="," >
+      <if test="entity.userId != null" >
+        user_id,
+      </if>
+      <if test="entity.channelId != null" >
+        channel_id,
+      </if>
+        create_time
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides="," >
+      <if test="entity.userId != null" >
+        #{entity.userId,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.channelId != null" >
+        #{entity.channelId,jdbcType=VARCHAR},
+      </if>
+        now()
+    </trim>
+  </insert>
+</mapper>

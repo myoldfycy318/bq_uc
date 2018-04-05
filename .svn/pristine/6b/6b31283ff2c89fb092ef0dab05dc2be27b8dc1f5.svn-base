@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<buIds>
+	<buId>
+		<id>DOME001</id>
+		<name>冰穹sdk</name>
+	</buId>
+	<buId>
+		<id>DOME002</id>
+		<name>冰穹应用商店app</name>
+	</buId>
+	<buId>
+		<id>DOME003</id>
+		<name>游戏发行sdk</name>
+	</buId>
+	<buId>
+		<id>DOME004</id>
+		<name>伪BU标识B端用户来源</name>
+	</buId>
+	<buId>
+		<id>DOME005</id>
+		<name>海外sdk</name>
+	</buId>
+	<buId>
+		<id>DOME006</id>
+		<name>passport</name>
+	</buId>
+    <buId>
+        <id>DOME007</id>
+        <name>h5game</name>
+    </buId>
+    <buId>
+        <id>DOME009</id>
+        <name>OGP webgame</name>
+    </buId>
+    <buId>
+        <id>DOME010</id>
+        <name>openPlatform</name>
+    </buId>
+
+    <buId>
+        <id>DOME011</id>
+        <name>微信公众平台</name>
+    </buId>
+    <buId>
+        <id>DOME012</id>
+        <name>页游平台</name>
+    </buId>
+    <buId>
+        <id>DOME013</id>
+        <name>LETV_GAME</name>
+    </buId>
+    <buId>
+        <id>DOME014</id>
+        <name>discuz论坛</name>
+    </buId>
+    <buId>
+        <id>DOME015</id>
+        <name>VR平台</name>
+    </buId>
+
+</buIds>

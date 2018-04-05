@@ -1,0 +1,93 @@
+package com.qbao.store.controller.thirdpart.thirdOauth;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.util.HttpUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * OGP授权登录
+ * Created by admin on 2017/8/2.
+ */
+@Controller
+@RequestMapping("/thirdOauthLogin/ogp")
+public class OgpController extends BaseController {
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+
+    @RequestMapping("/getAccessToken")
+    @ResponseBody
+    public void getAccessToken(HttpServletRequest request, HttpServletResponse response) {
+        String url = null;
+        try {
+            url = propertiesUtil.getString("ogp.accessTokenUrl").trim()
+                    + "?gameId=" + propertiesUtil.getString("ogp.gameId").trim()
+                    + "&state=" + request.getParameter("buId")
+                    + "&redirectUri=" + URLEncoder.encode(propertiesUtil.getString("ogp.redirectUri").trim(), "UTF-8");
+            Map<String, String> data = new HashMap<String, String>();
+            data.put("url", url);
+            response.sendRedirect(url);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 根据code获取accessToken,根据accessToken获取openID ,根据openID获取userInfo
+     */
+    @RequestMapping("/login")
+    public void login(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        String token = request.getParameter("token");
+        String state = request.getParameter("state");
+        StringBuilder errorMsg = new StringBuilder(propertiesUtil.getString(state + ".error.redirectUri").trim());
+        errorMsg.append("?");
+        if (StringUtils.isBlank(token)) {
+            log.error("OGP获取token失败!");
+            errorMsg.append("message").append("=").append("OGP获取token失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String openId = getOpenIdByToken(token);
+        if (StringUtils.isBlank(openId)) {
+            log.error("OGP获取openID失败!");
+            errorMsg.append("message").append("=").append("OGP获取openID失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+
+        StringBuilder sb = new StringBuilder("/thirdOauthLogin/thirdLogin").append("?");
+        sb.append("openId").append("=").append(openId).append("&");
+        sb.append("userName").append("=").append(RandomStringUtil.generateName()).append("&");
+        sb.append("thirdId").append("=").append("7").append("&");
+        sb.append("state").append("=").append(state);
+        request.getRequestDispatcher(sb.toString()).forward(request, response);
+    }
+
+    /**
+     * 通过access_token获取openID
+     */
+    public String getOpenIdByToken(String token) {
+        String url = propertiesUtil.getString("ogp.openIDUrl").trim() + "?token=" + token;
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("code")) && JSONObject.parseObject(backStr).getString("code").equals("0")) {
+            String data = JSONObject.parseObject(backStr).getString("data");
+            return JSONObject.parseObject(data).getString("userId");
+        } else {
+            log.error("OGP获取openID失败,code:{},", JSONObject.parseObject(backStr).getString("code"), JSONObject.parseObject(backStr).getString("message"));
+        }
+        return null;
+    }
+
+
+}

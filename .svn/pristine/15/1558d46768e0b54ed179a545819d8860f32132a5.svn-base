@@ -1,0 +1,125 @@
+package com.qbao.store.controller.thirdpart.thirdOauth;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.util.HttpUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 微博第三方授权登录
+ * Created by admin on 2017/7/24.
+ */
+@Controller
+@RequestMapping("/thirdOauthLogin/weibo")
+public class WeiBoController extends BaseController {
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+
+    /**
+     * 返回获取weibo code的url
+     */
+    @RequestMapping("/authorize")
+    public void authorize(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String url = propertiesUtil.getString("sina.authorizeUrl").trim()
+                + "?client_id=" + propertiesUtil.getString("sina.clientId").trim()
+                + "&redirect_uri=" + propertiesUtil.getString("sina.redirectUri").trim()
+                + "&response_type=code&state=" + request.getParameter("buId");
+        Map<String, String> data = new HashMap<String, String>();
+        data.put("url", url);
+        response.sendRedirect(url);
+    }
+
+    /**
+     * 根据code获取accessToken,根据accessToken获取weibo UserInfo
+     */
+    @RequestMapping("/login")
+    public void login(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        String code = request.getParameter("code");
+        String[] strArr = request.getParameter("state").split("-");
+        String state = request.getParameter("state");
+        StringBuilder errorMsg = new StringBuilder(propertiesUtil.getString(strArr[0] + ".error.redirectUri").trim());
+        errorMsg.append("?");
+        if (StringUtils.isBlank(code)) {
+            log.error("微博获取授权码失败!");
+            errorMsg.append("message").append("=").append("微博获取授权码失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String weiboToken = getWeiBoAccessTokenByCode(code);
+        if (StringUtils.isBlank(weiboToken)) {
+            log.error("微博获取accessToken失败!line:WeiBoController 59");
+            errorMsg.append("message").append("=").append("微博获取accessToken失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String userStr = showUserById(JSONObject.parseObject(weiboToken).getString("uid"), JSONObject.parseObject(weiboToken).getString("access_token"));
+        if (StringUtils.isBlank(userStr)) {
+            log.error("微博获取用户信息失败!line:WeiBoController 65");
+            errorMsg.append("message").append("=").append("微博获取用户信息失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        StringBuilder sb = new StringBuilder("/thirdOauthLogin/thirdLogin").append("?");
+        sb.append("openId").append("=").append(JSONObject.parseObject(weiboToken).getString("uid")).append("&");
+        sb.append("userName").append("=").append(JSONObject.parseObject(userStr).getString("name")).append("&");
+        sb.append("avatarUrl").append("=").append(JSONObject.parseObject(userStr).getString("profile_image_url")).append("&");
+        sb.append("gender").append("=").append(JSONObject.parseObject(userStr).getString("gender")).append("&");
+        sb.append("thirdId").append("=").append("2").append("&");
+        sb.append("state").append("=").append(state);
+
+        request.getRequestDispatcher(sb.toString()).forward(request, response);
+    }
+
+    /**
+     * 微博 获取access_token
+     */
+    @ResponseBody
+    @RequestMapping("/getWeiBoAccessTokenByCode")
+    public String getWeiBoAccessTokenByCode(String code) {
+        String url = propertiesUtil.getString("sina.accessTokenUrl").trim()
+                + "?client_id=" + propertiesUtil.getString("sina.clientId").trim()
+                + "&client_secret=" + propertiesUtil.getString("sina.clientSercert").trim()
+                + "&grant_type=authorization_code"
+                + "&code=" + code
+                + "&redirect_uri=" + propertiesUtil.getString("sina.redirectUri").trim();
+        String backStr = HttpUtil.httpRequest(url, "POST", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("error"))) {
+            log.error("微博获取AccessToken失败!error_code:{};error:{}", JSONObject.parseObject(backStr).getString("error_code"), JSONObject.parseObject(backStr).getString("error"));
+            return null;
+        }
+        return backStr;
+
+
+    }
+
+    /**
+     * 微博 获取用户信息
+     *
+     * @param uid
+     * @param access_token
+     * @return
+     */
+    @RequestMapping("/showUserById")
+    @ResponseBody
+    public String showUserById(String uid, String access_token) {
+        String url = propertiesUtil.getString("sina.userUrl").trim() + "users/show.json"
+                + "?access_token=" + access_token
+                + "&uid=" + uid;
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("error"))) {
+            log.error("微博获取用户信息失败!error_code:{};error:{}", JSONObject.parseObject(backStr).getString("error_code"), JSONObject.parseObject(backStr).getString("error"));
+            return null;
+        }
+        return backStr;
+    }
+
+
+}

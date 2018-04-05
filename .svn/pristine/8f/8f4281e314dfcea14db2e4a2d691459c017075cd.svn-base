@@ -1,0 +1,291 @@
+package com.qbao.store.aspect;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.CommonUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.util.BizUtil;
+import com.qbao.store.util.TokenUtil;
+import com.qbao.store.util.UserCenterContext;
+import org.apache.commons.lang3.StringUtils;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Pointcut;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.AmqpTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+import javax.servlet.http.HttpServletRequest;
+import java.lang.reflect.Method;
+import java.util.Map;
+
+/**
+ * 数据源切换
+ * DefDataSourceAspect
+ *
+ * @author Zhang ShanMin
+ * @date 2017/7/19
+ * @time 18:01
+ */
+@Aspect
+@Component("dBIdxAspect")
+@Order(-1)//执行权重 最小最先执行
+public class DBIdxAspect {
+    private static final Logger logger = LoggerFactory.getLogger(DBIdxAspect.class);
+    @Autowired
+    protected AmqpTemplate amqpTemplate;
+
+    @Pointcut("execution(* com.qbao.store.controller..*.*(..)) && !within(com.qbao.store.controller.healthcheck.*)")
+    private void pointCut() {
+    }
+
+    @Around(value = "pointCut()")
+    public Object doBefore(ProceedingJoinPoint pjp) throws Throwable {
+        //logger.info("before invoke Object:" + pjp.getTarget() + ",Method:" + pjp.getSignature().getName());
+        StringBuilder sb = new StringBuilder();
+        sb.append("before invoke Object:").append(pjp.getTarget());
+        sb.append(",Method:").append(pjp.getSignature().getName());
+        for (int i = 0; i < pjp.getArgs().length; i++) {
+            if ((pjp.getArgs()[i] instanceof HttpServletRequest)) {
+                HttpServletRequest req = ((HttpServletRequest) pjp.getArgs()[i]);
+                sb.append(",请求参数:").append(JSONObject.toJSONString(req.getParameterMap()));
+            }
+        }
+        logger.info("DBIdxAspect 请求参数：{}",sb.toString());
+        MethodSignature joinPointObject = (MethodSignature) pjp.getSignature();
+        Method method = joinPointObject.getMethod();
+        RequestData requestData = null;
+        BaseResponse baseResponse = null;
+        //操作类型
+        OperateType operateType = method.getAnnotation(OperateType.class);
+        Object[] args = pjp.getArgs();
+        if (args != null && args.length > 0 && args[0] instanceof RequestData && operateType != null
+                && (requestData = (RequestData) args[0]) != null) {
+            requestData.setCountryCode(StringUtils.isBlank(requestData.getCountryCode()) ? "86" : requestData.getCountryCode());
+            switch (operateType.bizType()) {
+                case getUserInfo: {
+                    if (StringUtils.isNotBlank(requestData.getAccessToken())) {
+                        baseResponse = validate(requestData);
+                        if (!BaseResponse.isSuccess(baseResponse)) {
+                            return JSONObject.toJSONString(baseResponse);
+                        }
+                        baseResponse = setDbTablByUserId(requestData);
+                        if (!BaseResponse.isSuccess(baseResponse)) {
+                            return JSONObject.toJSONString(baseResponse);
+                        }
+                    }
+                    if (StringUtils.isNotBlank(requestData.getUserId())) {
+                        baseResponse = setDbTablByUserId(requestData);
+                        if (!BaseResponse.isSuccess(baseResponse)) {
+                            return JSONObject.toJSONString(baseResponse);
+                        }
+                    }
+                    break;
+                }
+                case modifyAttr:
+                case idcard:
+                case bind:
+                case modifyPassword: {
+                    baseResponse = validate(requestData);
+                    if (!BaseResponse.isSuccess(baseResponse)) {
+                        return JSONObject.toJSONString(baseResponse);
+                    }
+                    baseResponse = setDbTablByUserId(requestData);
+                    if (!BaseResponse.isSuccess(baseResponse)) {
+                        return JSONObject.toJSONString(baseResponse);
+                    }
+                    break;
+                }
+
+                case resetPassword:
+                case login: { //登录接口从账户索引中获取库表索引
+                    baseResponse = getPassPortIdxVal(requestData);//账户索引key
+                    if (!BaseResponse.isSuccess(baseResponse)) {
+                        return JSONObject.toJSONString(baseResponse);
+                    }
+                    break;
+                }
+                case touristLogin: {
+                    if (StringUtils.isBlank(requestData.getImsi())) {
+                        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+                    }
+                    String imsDbIdx = RedisUtil.hget(RedisContant.IMSI_DB_IDX, requestData.getImsi());
+                    setDdTblIdxIfNE(requestData, imsDbIdx);
+                    break;
+                }
+                case touristBind: {
+                    if (StringUtils.isBlank(requestData.getImsi())) {
+                        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+                    }
+                    requestData.setDbTblIdx(RedisUtil.hget(RedisContant.IMSI_DB_IDX, requestData.getImsi()));
+                    break;
+                }
+                case register: {
+                    //注册接口从Redis库表索引列表中获取库表索引
+                    requestData.setDbTblIdx(RedisUtil.lpop(RedisContant.DB_TBL_ID_IDX));
+                    requestData.setRegistered(true);//注册标识
+                    break;
+                }
+                case qbaoLogin: {
+                    if (StringUtils.isBlank(requestData.getQbaoUid())) {
+                        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+                    }
+                    String dbTblIdxKey = RedisUtil.hget(RedisContant.QBAO_THIRD_IDX, requestData.getQbaoUid());
+                    setDdTblIdxIfNE(requestData, dbTblIdxKey);
+                    break;
+                }
+                case thirdPartyLogin: {//第三方登录
+                    ThirdPartyEnum thirdPartyEnum = ThirdPartyEnum.getFromKey(requestData.getThirdId());
+                    if (StringUtils.isBlank(requestData.getOpenId()) || null == thirdPartyEnum) {
+                        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+                    }
+                    String dbTblIdxKey = RedisUtil.hget(thirdPartyEnum.getDbIdxKey(), requestData.getOpenId());
+                    setDdTblIdxIfNE(requestData, dbTblIdxKey);
+                    break;
+                }
+                case thirdPartyBind: { //第三方账户绑定
+                    ThirdPartyEnum thirdPartyEnum = ThirdPartyEnum.getFromKey(requestData.getThirdId());
+                    if (StringUtils.isBlank(requestData.getOpenId()) || null == thirdPartyEnum) {
+                        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+                    }
+                    requestData.setDbTblIdx(RedisUtil.hget(thirdPartyEnum.getDbIdxKey(), requestData.getOpenId()));
+                    break;
+                }
+            }
+            UserCenterContext.setDataSource(requestData.getDbTblIdx().split("-")[0]);//切换数据源使用
+        }
+        Object obj = pjp.proceed();
+        if (requestData == null)
+            return obj;
+        switch (operateType.bizType()) {
+            case touristLogin:
+            case register:
+            case qbaoLogin:
+            case thirdPartyLogin: {
+                if (!(requestData.getRegistered() && StringUtils.isNotBlank(requestData.getDbTblIdx())))
+                    return obj;
+                baseResponse = JSONObject.toJavaObject(JSONObject.parseObject((String) obj), BaseResponse.class);
+                ErrorCode errorCode = null;
+                if (null != baseResponse && (errorCode = ErrorCode.getFromKey(baseResponse.getCode())) != null && ErrorCode.SUCCESS != errorCode) {
+                    //对注册失败库表索进行回收,判断数据库该库表索引是有数据，没数据则将库表索引添加到库表列表内
+                    RequestData _requestData = new RequestData();
+                    _requestData.setDbTblIdx(requestData.getDbTblIdx());
+                    amqpTemplate.convertAndSend("db_tbl_idx_recovery_queue_key", _requestData); //异步通知使用rabbitmq
+                }
+            }
+        }
+        return obj;
+    }
+
+    /**
+     * 若缓存中没有对应的库表索引，则从库表索引列表中获取
+     *
+     * @param requestData
+     * @param dbTblIdxKey
+     */
+    private void setDdTblIdxIfNE(RequestData requestData, String dbTblIdxKey) {
+        if (StringUtils.isBlank(dbTblIdxKey)) {
+            // 若缓存中无imsi库表索引，则为游客注册，则从Redis库表索引列表中获取新的库表索引
+            requestData.setDbTblIdx(RedisUtil.lpop(RedisContant.DB_TBL_ID_IDX));
+            requestData.setRegistered(true);//注册标识
+        } else {
+            requestData.setDbTblIdx(dbTblIdxKey);
+        }
+    }
+
+    /**
+     * 账户索引key
+     *
+     * @param requestData
+     * @return
+     */
+    private String getPassPortIdxKey(RequestData requestData) {
+        String passPortIdxKey = "";
+        String passport = StringUtils.isNotBlank(requestData.getPassport()) ? requestData.getPassport() :
+                (StringUtils.isNotBlank(requestData.getMobile()) ? requestData.getMobile() : requestData.getEmail());
+        PassportType passportType = CommonUtil.validatePassport(requestData.getCountryCode(), passport); //账户类型
+        switch (passportType) {
+            case email:
+                passPortIdxKey = RedisContant.EMAIL_IDX + passport;
+                break;
+            case mobile:
+                passPortIdxKey = RedisContant.MOBILE_IDX + passport;
+                break;
+        }
+        return passPortIdxKey;
+    }
+
+
+    /**
+     * 通过token获取userID
+     *
+     * @param requestData
+     * @return
+     */
+    private BaseResponse validate(RequestData requestData) {
+        String userId = null;
+        BUEnum bu = CommonUtil.validateBuId(requestData.getBuId());
+        BizUtil.validateClientId(requestData);
+        String clientId = BizUtil.distinguishPlatformOrGame(bu,requestData.getClientId());
+        requestData.setClientId(clientId);
+        String accessToken = TokenUtil.validateToken(requestData.getAccessToken(),clientId, CommonUtil.isAESContent(BUEnum.getFromKey(requestData.getBuId())));
+        Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+        userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+        requestData.setAccessToken(accessToken);
+        requestData.setUserId(userId);
+        return BaseResponse.success();
+    }
+
+
+    /**
+     * 根据domeuserId获取库表索引
+     *
+     * @param requestData
+     * @return
+     */
+    private BaseResponse setDbTablByUserId(RequestData requestData) {
+        String val = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+        UserEntity userEntity = null;
+        if (StringUtils.isBlank(val) || ((userEntity = JSONObject.parseObject(val, UserEntity.class)) == null)) {
+            return BaseResponse.fail(ErrorCode.USER_NOT_EXIST);
+        }
+        requestData.setDbTblIdx(userEntity.getDbTblIdx());
+        return BaseResponse.success();
+    }
+
+    /**
+     * 账户索引val
+     *
+     * @param requestData
+     * @return
+     */
+    private BaseResponse getPassPortIdxVal(RequestData requestData) {
+        String passPortIdxVal = "";
+        String passport = StringUtils.isNotBlank(requestData.getPassport()) ? requestData.getPassport() :
+                (StringUtils.isNotBlank(requestData.getMobile()) ? requestData.getMobile() : requestData.getEmail());
+        PassportType passportType = CommonUtil.validatePassport(requestData.getCountryCode(), passport); //账户类型
+        switch (passportType) {
+            case email:
+                passPortIdxVal = RedisUtil.hget(RedisContant.EMAIL_IDX, passport);
+                break;
+            case mobile:
+                passPortIdxVal = RedisUtil.hget(RedisContant.MOBILE_IDX, passport);
+                break;
+        }
+        if (StringUtils.isBlank(passPortIdxVal))
+            return BaseResponse.fail(ErrorCode.USER_NOT_EXIST);
+        requestData.setDbTblIdx(passPortIdxVal);
+        return BaseResponse.success();
+    }
+
+
+}

@@ -1,0 +1,238 @@
+package com.qbao.store.controller.thirdpart;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.CommonUtil;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.service.thirdpart.ThirdOauthLoginService;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 第三方授权登录
+ * Created by admin on 2017/7/4.
+ */
+@Controller
+@RequestMapping("/thirdOauthLogin")
+public class ThirdOauthLoginController extends ThirdPartyAdapterController {
+
+    private final static Logger logger = LoggerFactory.getLogger(ThirdOauthLoginController.class);
+    @Autowired
+    private ThirdOauthLoginService thirdOauthLoginService;
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+
+    /**
+     * 三方授权 传多个参数需要使用-拼接字符方式传递
+     * @param requestData
+     * @param request
+     * @param response
+     */
+    @ResponseBody
+    @RequestMapping("/thirdAuthorize")
+    public void thirdAuthorize(RequestData requestData, HttpServletRequest request, HttpServletResponse response) {
+        ThirdPartyEnum thirdPartyEnum;//第三方账户
+        StringBuilder sb = null;
+        StringBuilder errorMsg = new StringBuilder(propertiesUtil.getString(requestData.getBuId() + ".error.redirectUri").trim());
+        errorMsg.append("?");
+        try {
+            BaseResponse baseResponse = validateParam(requestData, request);
+            if (!BaseResponse.isSuccess(baseResponse)) {
+                errorMsg.append("code").append("=").append(baseResponse.getCode()).append("&");
+                errorMsg.append("message").append("=").append(baseResponse.getMessage());
+                request.getRequestDispatcher(errorMsg.toString()).forward(request, response);
+            }
+            validateBuId(requestData.getBuId());
+            StringBuilder paramStr = new StringBuilder(requestData.getBuId() + "-" + request.getParameter("channelCode") + "-" + requestData.getPlatformType());
+            if (StringUtils.isNotBlank(requestData.getThirdId()) && null != (thirdPartyEnum = ThirdPartyEnum.getFromKey(requestData.getThirdId()))) {
+                switch (thirdPartyEnum) {
+                    case SINA:
+                        sb = new StringBuilder("/thirdOauthLogin/weibo/authorize");
+                        break;
+                    case QQ:
+                        sb = new StringBuilder("/thirdOauthLogin/qq/authorize");
+                        break;
+                    case WEIXIN: {
+                        if (StringUtils.isNotBlank(requestData.getAppId()) && StringUtils.isNotBlank(requestData.getSecret())) {
+                            sb = new StringBuilder("/thirdOauthLogin/weixin/authorize_public");
+                            paramStr.append("-" + requestData.getAppId() + "-" + requestData.getSecret() + "-" + requestData.getApp_code());
+                        } else {
+                            sb = new StringBuilder("/thirdOauthLogin/weixin/authorize");
+                        }
+                    }
+                    break;
+                    case OGP:
+                        sb = new StringBuilder("/thirdOauthLogin/ogp/getAccessToken");
+                        break;
+                }
+                sb.append("?").append("buId").append("=").append(paramStr.toString());
+                request.getRequestDispatcher(sb.toString()).forward(request, response);
+            }
+        } catch (Exception e) {
+            logger.error("第三方授权thirdAuthorize错误{}", e);
+        }
+    }
+
+
+    @OperateType(bizType = BizType.thirdPartyLogin)
+    @ResponseBody
+    @RequestMapping("/thirdLogin")
+    public void thirdLogin(RequestData requestData, HttpServletRequest request, HttpServletResponse response) {
+        UserEntity userEntity = null;
+        String ogpToken = request.getParameter("ogpToken");
+        try {
+            requestData.setUserName(handleUserName(requestData));
+            requestData.setClientId(requestData.getBuId());
+            BUEnum buEnum = CommonUtil.validateBuId(requestData.getBuId());
+            userEntity = thirdOauthLoginService.login(requestData);
+
+            if (userEntity == null) {
+                response.sendRedirect(propertiesUtil.getString(requestData.getBuId() + ".error.redirectUri").trim());
+            }
+            //微信公众号支付使用
+            if (StringUtils.isNotBlank(requestData.getThirdId()) && requestData.getThirdId().equals("6")
+                    && StringUtils.isNotBlank(requestData.getAppId()) && StringUtils.isNotBlank(requestData.getWxOpenId())) {
+                RedisUtil.hset(RedisContant.WEIXIN_PUBLIC_IDX + ":" + userEntity.getUserId(), requestData.getAppId(), requestData.getWxOpenId());
+            }
+
+            String accessToken = cacheToken(requestData.getClientId(), userEntity.getUserId(), userEntity.getSalt());
+            //是否实名认证
+            String checked = StringUtils.isNotBlank(userEntity.getIdCardNo()) ? "true" : "false";
+            //是否绑定手机
+            String isBind = StringUtils.isNotBlank(userEntity.getMobile()) ? "true" : "false";
+            StringBuilder sb = new StringBuilder(propertiesUtil.getString(requestData.getBuId() + ".normal.redirectUri").trim());
+            sb.append("?");
+            sb.append("accessToken").append("=").append(accessToken).append("&");
+            sb.append("checked").append("=").append(checked).append("&");
+            if (StringUtils.isNotBlank(ogpToken))
+                sb.append("ogpToken").append("=").append(ogpToken).append("&");
+            sb.append("channelCode").append("=").append(requestData.getChannelId()).append("&");
+            sb.append("app_code").append("=").append((StringUtils.isBlank(requestData.getApp_code()) || "null".equalsIgnoreCase(requestData.getApp_code())) ? "" : requestData.getApp_code()).append("&");
+            sb.append("appId").append("=").append(StringUtils.isNotBlank(requestData.getAppId()) ? requestData.getAppId() : "").append("&");
+            sb.append("isBind").append("=").append(isBind);
+
+            logger.info("第三方授权登录成功后跳转url:{}", sb.toString());
+            response.sendRedirect(sb.toString());
+        } catch (Exception e) {
+            logger.error("第三方授权错误{}", e);
+        }
+    }
+
+    private String handleUserName(RequestData requestData) {
+        ThirdPartyEnum thirdPartyEnum;//第三方账户
+        String userName = "";
+        if (StringUtils.isNotBlank(requestData.getThirdId()) && StringUtils.isNotBlank(requestData.getOpenId()) &&
+                null != (thirdPartyEnum = ThirdPartyEnum.getFromKey(requestData.getThirdId()))) {
+            switch (thirdPartyEnum) {
+                case SINA:
+                    userName = "wb_" + requestData.getUserName();
+                    break;
+                case QQ:
+                    userName = "qq_" + requestData.getUserName();
+                    break;
+                case WEIXIN:
+                    userName = "wx_" + requestData.getUserName();
+                    break;
+                case OGP:
+                    userName = "ogp_" + requestData.getUserName();
+                    break;
+            }
+        }
+        return userName;
+    }
+
+    /**
+     * 仅限冰趣APP三方授权使用
+     *
+     * @param requestData
+     * @param request
+     * @param response
+     * @return
+     */
+    @OperateType(bizType = BizType.thirdPartyLogin)
+    @ResponseBody
+    @RequestMapping("/thirdLoginApp")
+    public String thirdLoginApp(RequestData requestData, HttpServletRequest request, HttpServletResponse response) {
+        UserEntity userEntity = null;
+        Map<String, String> map = new HashMap<String, String>();
+        try {
+            String buId = request.getParameter("state");
+            requestData.setUserName(handleUserName(requestData));
+            requestData.setBuId(buId);
+            requestData.setClientId(buId);
+            userEntity = thirdOauthLoginService.login(requestData);
+            if (userEntity == null) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            String accessToken = cacheToken(requestData.getClientId(), userEntity.getUserId(), userEntity.getSalt());
+            //是否实名认证
+            String checked = StringUtils.isNotBlank(userEntity.getIdCardNo()) ? "true" : "false";
+            //是否绑定手机
+            String isBind = StringUtils.isNotBlank(userEntity.getMobile()) ? "true" : "false";
+            //授权登录类型
+            map.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            map.put("domeUserId", userEntity.getUserId());
+            map.put("checked", checked);
+            map.put("isBind", isBind);
+        } catch (Exception e) {
+            logger.error("第三方APP授权错误{}", e);
+        }
+        return JSONObject.toJSONString(BaseResponse.success(map));
+    }
+
+
+    @OperateType(bizType = BizType.thirdPartyBind)
+    @ResponseBody
+    @RequestMapping("/thirdBind")
+    public String thirdBind(RequestData requestData) {
+        try {
+            if (StringUtils.isBlank(requestData.getOpenId())) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            //账户绑定
+            bindPassport(requestData);
+            UserEntity userEntity = thirdOauthLoginService.bind(requestData);
+            String accessToken = cacheToken(requestData.getClientId(), userEntity.getUserId(), userEntity.getSalt());
+            RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.passport.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            data.put("domeUserId", userEntity.getUserId());
+            data.put("passport", requestData.getPassport());
+            return JSONObject.toJSONString(BaseResponse.success(data));
+        } catch (Exception e) {
+            return handleException("thirdBind", e);
+        }
+    }
+
+    public BaseResponse validateParam(RequestData requestData, HttpServletRequest request) throws Exception {
+        if (StringUtils.isBlank(requestData.getThirdId())) {
+            logger.error("thirdId为空！");
+            return BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION.getCode(), "thirdId为空");
+        }
+        if (StringUtils.isBlank(request.getParameter("channelCode"))) {
+            logger.error("channelId为空！");
+            return BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION.getCode(), "channelId为空");
+        }
+        if (StringUtils.isBlank(requestData.getPlatformType().toString())) {
+            logger.error("platformType为空！");
+            return BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION.getCode(), "platformType为空");
+        }
+        return BaseResponse.success();
+    }
+
+}

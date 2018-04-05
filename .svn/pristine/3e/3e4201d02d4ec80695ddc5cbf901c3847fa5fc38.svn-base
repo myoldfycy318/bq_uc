@@ -1,0 +1,235 @@
+package com.qbao.store.controller.v2;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MailUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.index.EmailIndexEntity;
+import com.qbao.store.entity.index.MobileIndexEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserCard;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.UserCardService;
+import com.qbao.store.service.index.EmailIndexService;
+import com.qbao.store.service.index.MobileIndexService;
+
+/**
+ * 针对passport项目的接口<br>
+ * v2 2017/06/1
+ *
+ * @author hunsy
+ */
+@RequestMapping(value = "v2/register")
+@Controller
+public class V2RegisterController extends IBaseController {
+
+    @Autowired
+    private RegisterService registerService;
+    @Autowired
+    private UserCardService userCardService;
+    @Autowired
+    private EmailIndexService emailIndexService;
+    @Autowired
+    private MobileIndexService mobileIndexService;
+
+    /**
+     * 手机注册
+     *
+     * @param countryCode 国家码
+     * @param passport    手机号码
+     * @param password    密码
+     * @param mobileCode  短信验证码
+     * @param buId        BUID
+     * @param clientId    ClientID
+     * @param channelId   ChannelId
+     * @return
+     */
+    @RequestMapping("/mobile")
+    @ResponseBody
+    public String mobileRegister(
+            String passport, String password,
+            String mobileCode, String buId,
+            String avatarUrl, String clientId,
+            String channelId, String name, String card,
+            @RequestParam(defaultValue = "true") Boolean needCard,
+            @RequestParam(defaultValue = "86") String countryCode,
+            @RequestParam(defaultValue = "N") String gender) {
+        try {
+            BUEnum buEnum = validateBuId(buId);
+            // 请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            // 验证手机号码
+            if (countryCode.equals("86")) {
+                validateMobileInner(passport);
+            } else {
+                validateMobileAbroad(passport);
+            }
+            // 验证密码
+            validatePassword(password, isAESContent(BUEnum.getFromKey(buId)));
+            if (needCard) {
+                // 验证姓名
+                validateNameInner(name);
+                // 验证身份证号
+                validateCardInner(card);
+            }
+            // 验证手机验证码
+            SMSUtils.verifySmsCode(countryCode, passport, mobileCode, clientId, BizType.register.name());
+            // 注册
+            UserBasicEntity entity = registerService.register(countryCode, passport, password, gender, buId, avatarUrl, channelId, clientId);
+            logger.info("注册返回结果--->entity:{}", JSON.toJSONString(entity));
+            if (entity == null) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            // 生成AccessToken令牌
+            String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());
+
+            if (needCard) {
+                // 进行实名认证
+                saveCard(clientId, buId, card, name, entity.getUserId());
+            }
+            Map<String, String> result = new HashMap<String, String>();
+            result.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            result.put("domeUserId", entity.getUserId());
+            return JSONObject.toJSONString(BaseResponse.success(result));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 邮箱是否已经注册了
+     *
+     * @param passport
+     * @return
+     */
+    @RequestMapping(value = "has")
+    @ResponseBody
+    public String haveRegister(String passport) {
+
+        try {
+
+            if (StringUtils.isEmpty(passport)) {
+                logger.error("账号为空");
+                throw new BizException(ErrorCode.PASSPORT_NULL.code);
+            }
+            if (passport.contains("@")) {
+                validateEmail(passport);
+                EmailIndexEntity em = emailIndexService.queryByEmail(passport);
+                if (em != null) {
+                    logger.error("邮箱已经注册");
+                    throw new BizException(ErrorCode.PASSPORT_EXIST.getCode());
+                }
+            } else {
+                validateMobileInner(passport);
+                MobileIndexEntity index = mobileIndexService.queryByMobile("86", passport);
+                if (index != null) {
+                    logger.error("手机号码已经注册");
+                    throw new BizException(ErrorCode.PASSPORT_EXIST.code);
+                }
+            }
+
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            // TODO: handle exception
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 邮箱注册
+     *
+     * @param email     邮箱
+     * @param password  密码
+     * @param gender    性别
+     * @param avatarUrl 头像
+     * @param emailCode 邮箱验证码
+     * @param buId      BuId
+     * @param clientId  ClientId
+     * @param channelId ChannelId
+     * @return
+     */
+    @RequestMapping("/email")
+    @ResponseBody
+    public String registerEmail(
+            String email, String password, String avatarUrl,
+            String buId, String clientId, String channelId,
+            String card, String name, String emailCode,
+            @RequestParam(defaultValue = "N") String gender,
+            @RequestParam(defaultValue = "true") Boolean needCard) {
+        try {
+            BUEnum buEnum = validateBuId(buId);
+            // 请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+
+            validateEmail(email);
+            // 非passport请求，需要emailCode
+            if (buEnum != BUEnum.PASSPORT) {
+
+                MailUtil.verifyCode(email, clientId, BizType.register.name(), emailCode);
+            }
+
+            if (needCard) {
+                // 验证姓名
+                validateNameInner(name);
+                // 验证身份证号
+                validateCardInner(card);
+            }
+            validatePassword(password, isAESContent(BUEnum.getFromKey(buId)));
+            UserBasicEntity entity = registerService.register(null, email, password, gender, buId, avatarUrl, channelId, clientId);
+            logger.info("注册返回结果entity:{}", JSON.toJSONString(entity));
+
+            if (entity == null) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+
+            String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());
+            if (needCard) {
+                // 进行实名认证
+                saveCard(clientId, buId, card, name, entity.getUserId());
+            }
+            Map<String, String> result = new HashMap<String, String>();
+            result.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            result.put("domeUserId", entity.getUserId());
+            return JSONObject.toJSONString(BaseResponse.success(result));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    private void saveCard(String clientId, String buid, String card, String name, String uid) throws Exception {
+
+        UserCard userCard = new UserCard();
+        userCard.setClientId(clientId);
+        userCard.setBuId(buid);
+        userCard.setCard(card);
+        userCard.setName(name);
+        userCard.setUid(uid);
+        userCardService.insert(userCard);
+    }
+
+}

@@ -1,0 +1,7 @@
+#\u626b\u7801\u8df3\u8f6c\u5730\u5740
+#common.qrcode.redirect=http://store.qbao.com/wap/qrcode/scan
+#\u67e5\u8be2\u7528\u6237\u89d2\u8272\u63a5\u53e3\u5730\u5740
+#common.user.url.role=http://user.qianbao666.com/api/get/userRole/{username}/new
+#\u67e5\u8be2\u7528\u6237\u4fe1\u606f\u63a5\u53e3\u5730\u5740
+#common.user.url.info=http://user.qianbao666.com/api/user/{username}/get
+#qrcode.liantu.url=http://qr.liantu.com/api.php?text=

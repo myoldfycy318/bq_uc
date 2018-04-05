@@ -1,0 +1,155 @@
+package com.qbao.store.service.impl;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.qbao.store.entity.index.EmailIndexEntity;
+import com.qbao.store.entity.index.MobileIndexEntity;
+import com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.service.PasswordService;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.index.EmailIndexService;
+import com.qbao.store.service.index.MobileIndexService;
+import com.qbao.store.service.openPlatform.OpenPlatformService;
+import com.qbao.store.util.CommonUtil;
+import com.qbao.store.util.MD5Util;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月29日 下午3:16:14 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月29日 下午3:16:14 	修改人：
+ *  	描述	:
+ ***********************************************************
+ */
+@Service("passwordService")
+public class PasswordServiceImpl implements PasswordService
+{
+	private static final Logger log = LoggerFactory.getLogger(PasswordServiceImpl.class);
+	
+	@Autowired
+	UserBasicService userBasicService;
+	
+	@Autowired
+	MobileIndexService mobileIndexService;
+	
+	@Autowired
+	EmailIndexService emailIndexService;
+	
+	@Autowired
+	OpenPlatformService openPlatformService;
+	/**
+	 * 
+	 *  函数名称 ：resetPassword
+	 *  功能描述 ：  
+	 *  参数说明 ：
+	 * @param passport
+	 * @param password
+	 * @param passportType
+	 *  	@return
+	 *  	@throws Exception
+	 *  返回值：
+	 *  	
+	 *  修改记录：
+	 *  日期 ：2016年4月29日 下午3:16:18	修改人：  
+	 *  描述 ：
+	 *
+	 */
+	@Override
+	public UserBasicEntity resetPassword(String countryCode, String passport, String password, PassportType passportType) throws Exception
+	{
+		String userId = "";
+		if(PassportType.mobile == passportType)
+		{
+			MobileIndexEntity indexEntity = mobileIndexService.queryByMobile(countryCode, passport);
+
+			if(indexEntity == null)
+			{
+				indexEntity = mobileIndexService.queryByMobile(null, passport);
+				if (indexEntity == null) {
+					log.error("账号不存在，mobile="+ passport);
+					throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode(), ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+				}
+			}
+			userId = indexEntity.getUserId();
+		}
+		if(PassportType.email == passportType)
+		{
+			EmailIndexEntity indexEntity = emailIndexService.queryByEmail(passport);
+			if(indexEntity == null)
+			{
+				log.error("账号不存在，mobile="+ passport);
+				throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode(), ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+			}
+			userId = indexEntity.getUserId();
+		}
+		
+		UserBasicEntity entity = userBasicService.queryById(userId);
+		
+		if(entity == null)
+		{
+			log.error("数据异常，可能存在索引表与基本表数据不一致！");
+			throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode(), ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+		}
+		
+		String salt = RandomStringUtil.generateSalt();
+		String encPassword = MD5Util.getMD5String(password + salt);
+		
+		UserBasicEntity userBasicEntity = CommonUtil.buildUserBasicEntity(entity.getUserId(), entity.getUserName(), entity.getCountryCode(), passport, encPassword,entity.getStatus(), salt, entity.getBuId());
+			
+		int result = userBasicService.update(userBasicEntity);
+		
+		if(result != 1)
+		{
+			log.error("更新失败!entity = " + entity + ", passport = " + passport);
+			return null;
+		}
+		return userBasicService.queryById(entity.getUserId());
+	}
+	
+	@Override
+	public OpenPlatformBasicEntity resetPassword4Open(String passport, String password) throws Exception
+	{
+		PassportType passportType = PassportType.validatePassport(null,passport);
+		OpenPlatformBasicEntity entity = null;
+		if(PassportType.mobile == passportType)
+		{
+			entity = openPlatformService.queryByMobile(passport);
+		}
+		else if(PassportType.email == passportType)
+		{
+			entity = openPlatformService.queryByEmail(passport);
+		}
+		if(entity == null)
+		{
+			log.error(ErrorCode.USER_NOT_EXIST.getMessage());
+			throw new BizException(ErrorCode.USER_NOT_EXIST.getCode());
+		}
+		
+		String salt = RandomStringUtil.generateSalt();
+		String encPassword = MD5Util.getMD5String(password + salt);
+		String userId = entity.getUserId();
+		String userName = entity.getUserName();
+		Integer status = entity.getStatus(); 
+		OpenPlatformBasicEntity basicEntity = CommonUtil.buildOpenPlatformUserBasicEntity(userId, userName, passport, encPassword, status, salt);
+		int result = openPlatformService.update(basicEntity);
+		
+		if(result != 1)
+		{
+			log.error("更新失败!entity = " + entity + ", passport = " + passport);
+			return null;
+		}
+		return openPlatformService.queryById(entity.getUserId());
+	}
+}

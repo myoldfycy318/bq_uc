@@ -1,0 +1,633 @@
+package com.qbao.store.controller;
+
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.GenderEnum;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.PasswordType;
+import com.bqiong.usercenter.constants.RiskConstants;
+import com.bqiong.usercenter.constants.ThirdPartyEnum;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.bqiong.usercenter.util.aes.AESUtils;
+import com.qbao.store.init.InitBean;
+import com.qbao.store.service.ClientService;
+import com.qbao.store.service.risk.RiskService;
+import com.qbao.store.util.TokenUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月15日 下午4:42:17 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月15日 下午4:42:17 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public class BaseController
+{
+	protected final static Logger log = LoggerFactory.getLogger(BaseController.class);
+	
+	@Autowired
+	protected RiskService riskService;
+	
+	@Autowired
+	protected ClientService clientService;
+	
+	@Autowired
+	private InitBean initBean;
+	
+	
+	/**
+	 * 
+	 *  函数名称 : handleException
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param msg
+	 *  	@param e
+	 *  	@return
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月22日 上午10:04:09	修改人：  
+	 *  	描述	：
+	 *
+	 */
+	protected String handleException(String msg, Throwable e)
+	{
+		if(e instanceof BizException)
+		{
+			ErrorCode errorCode = ErrorCode.getFromKey(((BizException)e).getErrorCode());
+			if(errorCode != null)
+			{
+				String response = JSONObject.toJSONString(BaseResponse.buildResponse(errorCode, null));
+				log.info("接口返回数据："+ response);
+				return response;
+			}
+		}
+		log.error(e.getMessage(), e);
+		return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+	}
+	
+	
+	/**
+	 * 
+	 *  函数名称 : cacheToken
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param clientId
+	 * @param userId
+	 * @param salt
+	 *
+	 */
+	protected String cacheToken(String clientId, String userId, String salt)
+	{
+		String accessToken = TokenUtil.generateAccessToken(clientId, userId, salt);
+		if(StringUtils.isBlank(accessToken))
+		{
+			log.error("token生成失败" + ",clientId=" + clientId + 
+					",userId=" + userId + ",salt is null?" + StringUtils.isBlank(salt));
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		String tokenKey =UserCenterConstants.REDIS_TOKEN_KEY_PREFIX + clientId + ":" + userId;
+		RedisUtil.set(tokenKey, accessToken, UserCenterConstants.TOKEN_EXPIRE_TIME);
+		log.info("tokenKey=" + tokenKey + ",accessToken=" + accessToken);
+		return accessToken;
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : buildResponse
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param result
+	 *  	@return
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月11日 下午1:57:28	修改人：  nz
+	 *  	描述	：
+	 *
+	 */
+	@SuppressWarnings("rawtypes")
+	protected BaseResponse buildResponse(Map result)
+	{
+		BaseResponse response = BaseResponse.success();
+        response.setData(result);
+        log.info("接口返回数据=" + buildLog(result));
+        return response;
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : clearLogField
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param result
+	 *  	@return
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年8月4日 下午2:34:55	修改人：  nz
+	 *  	描述	：清除掉不需要打印日志的字段
+	 *
+	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private String buildLog(Map result)
+	{
+		Map logMap = new HashMap();
+		for(Object obj : result.keySet())
+		{
+			logMap.put(obj, result.get(obj));
+		}
+		if(logMap.get(RiskConstants.CAPTCHA) != null)
+		{
+			logMap.remove(RiskConstants.CAPTCHA);
+		}
+		return JSONObject.toJSONString(logMap);
+	}
+
+	/**
+	 * 
+	 *  函数名称 : validatePassport
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param passport
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月9日 下午4:07:04	修改人：  
+	 *  	描述	：
+	 *
+	 */
+	protected PassportType validatePassport(String countryCode,String passport) throws Exception
+	{
+		PassportType type = null;
+		if(StringUtils.isBlank(passport))
+		{
+			log.error("参数passport为空");
+			throw new BizException(ErrorCode.PASSPORT_NULL.getCode());
+		}
+		if(countryCode == null || !countryCode.equals("86")){
+			type = PassportType.getPassportType(passport);
+		}else{
+			type = PassportType.getPassportTypeForInner(passport);
+		}
+		if(type == null)
+		{
+			throw new BizException(ErrorCode.PASSPORT_ILLEGLE.getCode());
+		}
+		return type;
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validatePassport4OpenPlatform
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param passport
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年7月22日 下午4:06:05	修改人：  
+	 *  	描述	：
+	 *
+	 */
+	protected void validatePassport4OpenPlatform(String passport) throws Exception
+	{
+		if(StringUtils.isBlank(passport))
+		{
+			log.error("参数passport为空");
+			throw new BizException(ErrorCode.OPEN_PASSPORT_NULL.getCode());
+		}
+		if(PassportType.getPassportType(passport) == null)
+		{
+			throw new BizException(ErrorCode.OPEN_PASSPORT_ILLEGLE.getCode());
+		}
+	}
+	
+	/**
+	 * 
+	 * @param userName
+	 * @throws Exception
+	 */
+	protected void validateUserName(String userName) throws Exception
+	{
+		if(StringUtils.isBlank(userName))
+		{
+			log.error("参数昵称为空");
+			throw new BizException(ErrorCode.USERNAME_NULL.getCode());
+		}
+		
+			if(!userName.matches(UserCenterConstants.USERNAME_REGEX))
+			{
+				log.error(ErrorCode.USERNAME_ILLEGLE.getMessage());
+				throw new BizException(ErrorCode.USERNAME_ILLEGLE.getCode());
+			}
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validateAvatarUrl
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param avatarUrl
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年7月20日 上午10:17:33	修改人：  
+	 *  	描述	：
+	 *
+	 */
+	protected void validateAvatarUrl(String avatarUrl) throws Exception
+	{
+		if(StringUtils.isBlank(avatarUrl))
+		{
+			log.error("头像url为空！");
+			throw new BizException(ErrorCode.AVATAR_PARAM_NULL.getCode());
+		}
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validatePwdLength
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param password
+	 * @param isAESPassword TODO
+	 *
+	 */
+	protected void validatePassword(String password, boolean isAESPassword) throws Exception
+	{
+		if(StringUtils.isBlank(password))
+		{
+			log.error("参数密码为空");
+			throw new BizException(ErrorCode.PASSWORD_NULL.getCode());
+		}
+		
+		if(isAESPassword)
+		{
+			password = AESUtils.decrypt(password);
+		}
+		
+		if(UserCenterConstants.PASSWORD_MIN_LENGTH > password.length() 
+				||UserCenterConstants.PASSWORD_MAX_LENGTH < password.length())
+		{
+			log.error(ErrorCode.PASSWORD_ILLEGLE.getMessage());
+			throw new BizException(ErrorCode.PASSWORD_ILLEGLE.getCode());
+		}
+		for(int i = 0; i < password.length(); i++)
+		{
+			if(UserCenterConstants.PASSWORD_ALLOW_CHAR.indexOf(password.charAt(i)) == -1)
+			{
+				log.error(ErrorCode.PASSWORD_ILLEGLE.getMessage()+ ",非法字符：" + password.charAt(i));
+				throw new BizException(ErrorCode.PASSWORD_ILLEGLE.getCode(), ErrorCode.PASSWORD_ILLEGLE.getMessage());
+			}
+		}
+		
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validatePasswordWithType
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param password
+	 * @param passwordType
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月12日 下午1:26:06	修改人：  
+	 *  	描述	：
+	 * @param isAESPassword TODO
+	 *
+	 */
+	protected void validatePasswordWithType(String password, PasswordType passwordType, boolean isAESPassword)
+	{
+		if(passwordType != PasswordType._new && passwordType != PasswordType._old && passwordType != PasswordType._confirm)
+		{
+			log.error("密码类型错误");
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		
+		if(StringUtils.isBlank(password))
+		{
+			if(passwordType == PasswordType._old)
+			{
+				log.error(ErrorCode.OLD_PWD_NULL.getMessage());
+				throw new BizException(ErrorCode.OLD_PWD_NULL.getCode());
+			}
+			else if(passwordType == PasswordType._new)
+			{
+				log.error(ErrorCode.NEW_PWD_NULL.getMessage());
+				throw new BizException(ErrorCode.NEW_PWD_NULL.getCode());
+			}
+			else if(passwordType == PasswordType._confirm)
+			{
+				log.error(ErrorCode.CONFIRM_PWD_NULL.getMessage());
+				throw new BizException(ErrorCode.CONFIRM_PWD_NULL.getCode());
+			}
+		}
+		
+		if(isAESPassword)
+		{
+			password = AESUtils.decrypt(password);
+		}
+		
+		if(UserCenterConstants.PASSWORD_MIN_LENGTH > password.length() 
+				||UserCenterConstants.PASSWORD_MAX_LENGTH < password.length())
+		{
+			
+			log.error(ErrorCode.PASSWORD_ILLEGLE.getMessage());
+			throw new BizException(ErrorCode.PASSWORD_ILLEGLE.getCode());
+		}
+		for(int i = 0; i < password.length(); i++)
+		{
+			if(UserCenterConstants.PASSWORD_ALLOW_CHAR.indexOf(password.charAt(i)) == -1)
+			{
+				log.error(ErrorCode.PASSWORD_ILLEGLE.getMessage()+ ",非法字符：" + password.charAt(i));
+				throw new BizException(ErrorCode.PASSWORD_ILLEGLE.getCode());
+			}
+		}
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validateIp
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param userIp
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月28日 下午5:13:27	修改人：  nz
+	 *  	描述	：
+	 *
+	 */
+	protected void validateIp(String userIp) 
+	{
+		String each = "(25[0-5]|2[0-4]\\d|[0-1]\\d{2}|[1-9]?\\d)";
+		String regIP = "^" + each + "\\." + each + "\\." + each + "\\." + each + "$";
+		if(StringUtils.isBlank(userIp))
+		{
+			log.error(ErrorCode.IP_NULL.getMessage());
+		}
+		else if(!userIp.matches(regIP))
+		{
+			log.error(ErrorCode.IP_ILLEGLE.getMessage() + ",userIp =" + userIp);
+		}
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validateClientId
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param clientId
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月28日 下午3:36:10	修改人：  niuzan
+	 *  	描述	：
+	 *
+	 */
+	protected void validateClientId(String clientId) throws Exception
+	{
+		if(StringUtils.isBlank(clientId))
+		{
+			log.error("clientId为空!");
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		/*String clientInfoKey = UserCenterConstants.REDIS_CLIENTINFO_KEY_PREFIX + clientId;
+		if(StringUtils.isNotBlank(RedisUtil.get(clientInfoKey)))
+		{
+			RedisUtil.expire(clientInfoKey, UserCenterConstants.CLIENTINFO_EXPIRE_TIME);
+			return;
+		}
+		ClientEntity entity = clientService.queryById(clientId);
+		if(entity != null)
+		{
+			RedisUtil.set(clientInfoKey, clientId, UserCenterConstants.CLIENTINFO_EXPIRE_TIME);
+		}
+		if(StringUtils.isBlank(RedisUtil.get(clientInfoKey)))
+		{
+			log.error(ErrorCode.CLIENT_NOT_EXIST.getMessage());
+			throw new BizException(ErrorCode.CLIENT_NOT_EXIST.getCode());
+		}
+		RedisUtil.expire(clientInfoKey, UserCenterConstants.CLIENTINFO_EXPIRE_TIME);*/
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validateBuId
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param buId
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月28日 下午6:29:10	修改人：  nz
+	 *  	描述	：
+	 *
+	 */
+	protected void validateBuId(String buId) throws Exception
+	{
+		if(StringUtils.isBlank(buId))
+		{
+			log.error("buId为空！");
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		if(StringUtils.isNotBlank(RedisUtil.get(UserCenterConstants.REDIS_BUINFO_KEY_PREFIX + buId)))
+		{
+			RedisUtil.expire(UserCenterConstants.REDIS_BUINFO_KEY_PREFIX + buId, UserCenterConstants.BUINFO_EXPIRE_TIME);
+			return;
+		}
+		initBean.init();
+		
+		if(StringUtils.isBlank(RedisUtil.get(UserCenterConstants.REDIS_BUINFO_KEY_PREFIX + buId)))
+		{
+			log.error("buId不存在！buid=" + buId);
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validateBizType
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param bizType
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月29日 下午2:49:13	修改人：  niuzan
+	 *  	描述	：
+	 *
+	 */
+	protected void validateBizType(String bizType) throws Exception
+	{
+		if(StringUtils.isBlank(bizType))
+		{
+			log.error("bizType为空!");
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		BizType bizTypeEnum = BizType.getFromKey(bizType);
+		
+		if(bizTypeEnum == null)
+		{
+			log.error("非法的业务类型！");
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : validateThirdId
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param thirdId
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月19日 上午10:27:12	修改人：  niuzan
+	 *  	描述	：
+	 *
+	 */
+	protected void validateThirdId(String thirdId) throws Exception
+    {
+        if(StringUtils.isBlank(thirdId))
+        {
+            log.error("thirdId为空!");
+            throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+        }
+        ThirdPartyEnum partyEnum = ThirdPartyEnum.getFromKey(thirdId);
+        
+        if(partyEnum == null)
+        {
+            log.error("thirdId非法！");
+            throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+        }
+    }
+	
+	
+	/**
+	 * 
+	 *  函数名称 : validateGender
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param gender
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月20日 下午12:18:31	修改人：  niuzan
+	 *  	描述	：
+	 *
+	 */
+	protected void validateGender(String gender) throws Exception
+    {
+        if(StringUtils.isBlank(gender))
+        {
+            log.error("参数gender为空");
+            throw new BizException(ErrorCode.GENDER_PARAM_NULL.getCode());
+        }
+        if(GenderEnum.getFromKey(gender) == null)
+        {
+            log.error(ErrorCode.GENDER_PARAM_ILLEGLE.getMessage() + ",gender=" + gender);
+            throw new BizException(ErrorCode.GENDER_PARAM_ILLEGLE.getCode());
+        }
+    }
+	/**
+	 * 
+	 *  函数名称 : validateCommonParam
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param passport
+	 *  	@param buId
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月10日 上午11:52:24	修改人：  
+	 *  	描述	：
+	 *
+	 */
+	protected void validateCommonParam(String countryCode,String passport, String buId) throws Exception
+	{
+		//validateClientId(clientId);
+		validateBuId(buId);
+		validatePassport(countryCode,passport);
+	}
+	
+	protected static void checkStrongPassword(String password)
+	{  
+        int passNumber = 0;  
+        Pattern pattern1 = Pattern.compile("(?=.*[!\\|@#$%\\^&\\*\\(\\)_-|\\+|=|\\.]).{6,16}");
+        Matcher m1 = pattern1.matcher(password);  
+        if (m1.matches())
+            passNumber ++;
+        Pattern pattern2 = Pattern.compile("(?=.*\\d).{6,16}");
+        Matcher m2 = pattern2.matcher(password);
+        if (m2.matches())
+            passNumber ++;
+        Pattern pattern3 = Pattern.compile("(?=.*[a-z]).{6,16}");
+        Matcher m3 = pattern3.matcher(password);
+        if (m3.matches())
+            passNumber ++;
+        Pattern pattern4 = Pattern.compile("(?=.*[A-Z]).{6,16}");
+        Matcher m4 = pattern4.matcher(password);
+        if (m4.matches())
+            passNumber ++;
+        if (passNumber < 3) 
+        {
+            log.error("密码应至少包含大写字母、小写字母、数字、特殊字符的三种");
+        }
+        log.error("通過");
+    }
+	
+	/**
+	 * 
+	 *  函数名称 : isAESContent
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param bu
+	 *  	@return
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年7月20日 上午9:45:14	修改人：  niuzan
+	 *  	描述	：现在包括发行在内都是自己系统，都采用了加密
+	 *
+	 */
+    protected boolean isAESContent(BUEnum bu) {
+        /*if(BUEnum.DOME_SDK == bu || BUEnum.DOME_APP_STORE == bu || BUEnum.PUBLISH == bu)
+		{
+			return true;
+		}
+		return false;*/
+
+        switch (bu) {
+            case DMOE_H5:
+                return false;
+            default:
+                return true;
+        }
+    }
+	
+}

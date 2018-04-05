@@ -1,0 +1,190 @@
+package com.qbao.store.service.impl;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.RedisContant;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.util.aes.AESUtils;
+import com.bqiong.usercenter.util.pbkdf2.Pbkdf2Util;
+import com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity;
+import com.qbao.store.service.LoginService;
+import com.qbao.store.service.openPlatform.OpenPlatformService;
+import com.qbao.store.util.MD5Util;
+import com.qbao.store.util.UserCenterContext;
+
+/**
+ * **********************************************************
+ * 内容摘要	：<p>
+ * <p/>
+ * 作者	：94841
+ * 创建时间	：2016年4月21日 下午3:38:59
+ * 当前版本号：v1.0
+ * 历史记录	:
+ * 日期	: 2016年4月21日 下午3:38:59 	修改人：
+ * 描述	:
+ * **********************************************************
+ */
+@Service("loginService")
+public class LoginServiceImpl implements LoginService {
+    private final Logger log = LoggerFactory.getLogger(getClass());
+
+    @Autowired
+    OpenPlatformService openPlatformService;
+
+    @Transactional
+    @Override
+    public UserEntity login(RequestData requestData, PassportType passportType) throws Exception {
+        String redis_key = "";
+        switch (passportType) {
+            case mobile:
+                redis_key = RedisContant.MOBILE_BASIC_IDX;
+                break;
+            case email:
+                redis_key = RedisContant.EMAIL_BASIC_IDX;
+                break;
+        }
+        String userValue = RedisUtil.hget(redis_key, requestData.getPassport());
+        UserEntity entity = null;
+        if (StringUtils.isBlank(userValue) || (entity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+            log.error("用户不存在passport:{}", requestData.getPassport());
+            throw new BizException(ErrorCode.USER_NOT_EXIST.getCode());
+        }
+        if (checkUser(entity, requestData.getPassword())) {
+            UserCenterContext.buildUserBasicInfo2LogEntity(entity);
+            return entity;
+        }
+        log.error("登录失败，未知异常");
+        return null;
+    }
+
+    private boolean checkUser(UserEntity user, String password) {
+        if (user == null) {
+            log.error(ErrorCode.USER_NOT_EXIST.getMessage());
+            throw new BizException(ErrorCode.USER_NOT_EXIST.getCode(), ErrorCode.USER_NOT_EXIST.getMessage());
+        }
+        if (UserCenterConstants.NORMAL != user.getStatus()) {
+            throw new BizException(ErrorCode.USER_STATUS_INVALID.getCode(), ErrorCode.USER_STATUS_INVALID.getMessage());
+        }
+        String _password = user.getPassword();
+        String salt = user.getSalt();
+
+        String md5Password = MD5Util.getMD5String(password + salt);
+        String pbkdf2Password = Pbkdf2Util.encrypt(AESUtils.decrypt(password), salt);
+        if (!_password.equals(md5Password) && !_password.equals(pbkdf2Password)) {
+            throw new BizException(ErrorCode.PASSWORD_WRONG.getCode(), ErrorCode.PASSWORD_WRONG.getMessage());
+        }
+        return true;
+    }
+
+
+    /**
+     * 函数名称 ：login4OpenPlatform
+     * 功能描述 ：
+     * 参数说明 ：
+     *
+     * @param passport
+     * @param password
+     * @return 返回值：
+     * <p/>
+     * 修改记录：
+     * 日期 ：2016年5月11日 上午10:34:29	修改人：  nz
+     * 描述 ：
+     */
+    @Override
+    public OpenPlatformBasicEntity login4OpenPlatform(String passport, String password) {
+        PassportType passportType = PassportType.validatePassport(null, passport);
+        switch (passportType) {
+            case mobile:
+                return mobileLogin4OpenPlatform(passport, password);
+            case email:
+                return emailLogin4OpenPlatform(passport, password);
+            default:
+                log.error("开放平台用户登录异常，passport=" + passport);
+                return null;
+        }
+    }
+
+    private OpenPlatformBasicEntity mobileLogin4OpenPlatform(String passport, String password) {
+        OpenPlatformBasicEntity mobileEntity = openPlatformService.queryByMobile(passport);
+        if (mobileEntity == null) {
+            throw new BizException(ErrorCode.USER_NOT_EXIST.getCode());
+        }
+        if (checkUser(mobileEntity, password)) {
+            return mobileEntity;
+        }
+        log.error("登录失败，未知异常");
+        return null;
+    }
+
+    private OpenPlatformBasicEntity emailLogin4OpenPlatform(String passport, String password) {
+        OpenPlatformBasicEntity emailEntity = openPlatformService.queryByEmail(passport);
+        if (emailEntity == null) {
+            throw new BizException(ErrorCode.USER_NOT_EXIST.getCode());
+        }
+        if (checkUser(emailEntity, password)) {
+            return emailEntity;
+        }
+        return null;
+    }
+
+    private boolean checkUser(OpenPlatformBasicEntity user, String password) {
+        if (user == null) {
+            log.error(ErrorCode.USER_NOT_EXIST.getMessage());
+            throw new BizException(ErrorCode.USER_NOT_EXIST.getCode(), ErrorCode.USER_NOT_EXIST.getMessage());
+        }
+        if (UserCenterConstants.NORMAL != user.getStatus()) {
+            throw new BizException(ErrorCode.USER_STATUS_INVALID.getCode(), ErrorCode.USER_STATUS_INVALID.getMessage());
+        }
+        String _password = user.getPassword();
+        String salt = user.getSalt();
+
+        String comparePassword = MD5Util.getMD5String(password + salt);
+        if (!_password.equals(comparePassword)) {
+            throw new BizException(ErrorCode.PASSWORD_WRONG.getCode(), ErrorCode.PASSWORD_WRONG.getMessage());
+        }
+        return true;
+    }
+
+    @Override
+    public boolean isPassportExist4OpenPlatform(String passport) {
+        PassportType passportType = PassportType.validatePassport(null, passport);
+        switch (passportType) {
+            case mobile:
+                return isMobileExist4OpenPlatform(passport);
+            case email:
+                return isEmailExist4OpenPlatform(passport);
+            default:
+                throw new BizException(ErrorCode.PASSPORT_ILLEGLE.getCode());
+        }
+    }
+
+    private boolean isMobileExist4OpenPlatform(String passport) {
+        OpenPlatformBasicEntity mobileEntity = openPlatformService.queryByMobile(passport);
+        if (mobileEntity == null) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isEmailExist4OpenPlatform(String passport) {
+        OpenPlatformBasicEntity emailEntity = openPlatformService.queryByEmail(passport);
+        if (emailEntity == null) {
+            return false;
+        }
+        return true;
+    }
+
+
+}

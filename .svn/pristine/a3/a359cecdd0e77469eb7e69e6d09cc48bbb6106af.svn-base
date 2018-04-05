@@ -1,0 +1,124 @@
+package com.qbao.store.controller.thirdpart.qbao;
+
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MD5;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.controller.thirdpart.ThirdLoginByPasswordController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.H5YouPiaoUserEntity;
+import com.qbao.store.util.ApiConnector;
+import com.qbao.store.util.H5GameUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Created by admin on 2017/7/11.
+ */
+@Controller
+@RequestMapping("/youpiao")
+public class YouPiaoController extends BaseController {
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+    @Autowired
+    private RedisUtil redisUtil;
+    @Autowired
+    private ThirdLoginByPasswordController thirdLoginByPasswordController;
+
+    @RequestMapping(value = "/getTokenByUserCode")
+    @ResponseBody
+    public String getTokenByUserCode(String userCode, RequestData requestData, HttpServletRequest request, HttpServletResponse response) {
+        log.info("接入有票请求参数:{}", JSONObject.toJSONString(request.getParameterMap()));
+        JSONObject json = null;
+        JSONObject jsonObject = null;
+        JSONObject userJsonObj = null;
+        try {
+            if (StringUtils.isBlank(userCode)) {
+                log.error("有票userCode为空");
+                throw new BizException(ErrorCode.USERID_NULL.getCode(), ErrorCode.USERID_NULL.message);
+            }
+            validateBuId(requestData.getBuId());
+            //根据userCode到有票获取用户信息
+            String url = propertiesUtil.getString("youpiao.query.userinfo");
+            List<NameValuePair> paramList = new ArrayList<NameValuePair>();
+            Map<String, String> paramsMap = new HashMap<>();
+            paramsMap.put("userCode", userCode);
+            //处理有票签名
+            handleYouPiaoSign(paramsMap, paramList);
+            String resp = ApiConnector.post(url, paramList);
+            log.info("接入有票userCode:{},获取用户信息:{}", userCode, resp);
+            if (StringUtils.isNotBlank(resp) && (json = JSONObject.parseObject(resp)) != null
+                    && StringUtils.isNotBlank(json.getString("code")) && "1000".equals(json.getString("code"))
+                    && StringUtils.isNotBlank(json.getString("data"))) {
+                json = JSONObject.parseObject(json.getString("data"));
+                H5YouPiaoUserEntity userInfo = new H5YouPiaoUserEntity();
+                userInfo.setUserId(json.getString("userId"));
+                userInfo.setMobile(json.getString("mobile"));
+                userInfo.setUserCode(userCode);
+
+                List<NameValuePair> paramsList = new ArrayList<NameValuePair>();
+                paramsList.add(new BasicNameValuePair("userId", json.getString("userId")));
+                paramsList.add(new BasicNameValuePair("appId", propertiesUtil.getString("qbao.user.uc.appid")));
+                url = propertiesUtil.getString("qbao.user.detail.url");
+                resp = ApiConnector.post(url, paramsList);
+                log.info("根据userId获取钱宝用户信息,请求url:{},请求参数：{},响应报文：{}", url, com.alibaba.fastjson.JSONObject.toJSONString(paramsList), response);
+                if (StringUtils.isBlank(resp) || (jsonObject = com.alibaba.fastjson.JSONObject.parseObject(resp)) == null
+                        || 1 != jsonObject.getInteger("code") || (userJsonObj = jsonObject.getJSONObject("data")) == null) {
+                    throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode(), ErrorCode.PASSPORT_NOT_EXIST.message);
+                }
+                if (0 == userJsonObj.getInteger("enabled")) {
+                    throw new BizException(ErrorCode.ACCOUNT_FREEZE.getCode(), ErrorCode.ACCOUNT_FREEZE.message);
+                }
+                requestData.setQbaoUid(json.getString("userId"));
+                requestData.setUserName(userJsonObj.getString("username"));
+                redisUtil.setex(UserCenterConstants.NEWWAPGAME_BW_USER_USERID + json.getString("userId"), UserCenterConstants.CLIENTINFO_EXPIRE_TIME, JSONArray.toJSONString(userInfo));
+                String result = thirdLoginByPasswordController.login(requestData);
+                return result;
+            }
+        } catch (Exception e) {
+            log.info("接入有票userCode:{},异常", userCode, e);
+        }
+        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+    }
+
+
+    /**
+     * 处理有票签名
+     *
+     * @param paramsMap
+     * @param paramList
+     */
+    private void handleYouPiaoSign(Map<String, String> paramsMap, List<NameValuePair> paramList) {
+        paramsMap.put("appId", propertiesUtil.getString("youpiao.appid"));
+        paramsMap.put("timestamp", String.valueOf(System.currentTimeMillis()));
+        String paramSignStr = H5GameUtil.createLinkString(paramsMap);//将参数拼装
+        //通讯密钥
+        String secKey = propertiesUtil.getString("youpiao.sign.md5key");
+        secKey = "&md5Key=" + secKey;
+        //参数尾部加上通讯密钥进行加密，生成签名。
+        String targetSign = MD5.md5Encode(paramSignStr + secKey);
+        paramsMap.put("sign", targetSign);
+        for (Map.Entry<String, String> entry : paramsMap.entrySet()) {
+            paramList.add(new BasicNameValuePair(entry.getKey(), entry.getValue()));
+        }
+    }
+
+}

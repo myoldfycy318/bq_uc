@@ -1,0 +1,306 @@
+package com.qbao.store.controller.v2;
+
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.annotation.Risk;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MailUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserAllInOne;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.service.UserService;
+import com.qbao.store.service.risk.RiskService;
+import com.qbao.store.util.*;
+import org.apache.commons.beanutils.BeanUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.amqp.core.AmqpTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import com.bqiong.usercenter.util.CommonUtil;
+
+/**
+ * 修改用户信息
+ *
+ * @author hunsy
+ */
+@RequestMapping("v2/user")
+@Controller
+public class V2UserController extends IBaseController {
+    @Autowired
+    private RiskService riskService;
+    @Autowired
+    private UserService userService;
+    @Autowired
+    protected AmqpTemplate amqpTemplate;
+
+    /**
+     * 登录
+     *
+     * @return
+     * @RequestParam(defaultValue = "86") String countryCode,
+     * String passport, String password, String clientId, String buId
+     */
+    @Risk
+    @OperateType(bizType = BizType.login)
+    @RequestMapping(value = "login", method = RequestMethod.POST)
+    @ResponseBody
+    public String login(RequestData requestData) {
+        try {
+            BUEnum bu = validateBuId(requestData.getBuId());
+            BizUtil.validateClientId(requestData);
+            PassportType type = validatePassport(requestData.getCountryCode(), requestData.getPassport());
+            //验证解密
+            validatePassword(requestData.getPassword(), isAESContent(BUEnum.getFromKey(requestData.getBuId())));
+
+            UserEntity _userEntity = null;
+            String reids_key = (type == PassportType.mobile) ? RedisContant.MOBILE_BASIC_IDX : RedisContant.EMAIL_BASIC_IDX;
+            String userValue = RedisUtil.hget(reids_key, requestData.getPassport());
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                logger.error("账户信息不存在redis中 --> passport:{}", requestData.getPassport());
+                throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode());
+            }
+            UserCenterContext.buildUserBasicInfo2LogEntity(_userEntity);
+            String tmp = MD5Util.getMD5String(requestData.getPassword() + _userEntity.getSalt());
+            //密码不正确
+            if (!tmp.equals(_userEntity.getPassword())) {
+                logger.error("密码错误,passport:{}", requestData.getPassport());
+                throw new BizException(ErrorCode.PASSWORD_WRONG.getCode());
+            }
+            String clientId = BizUtil.distinguishPlatformOrGame(bu,requestData.getClientId());
+            String accessToken = cacheToken(clientId, _userEntity.getUserId(), _userEntity.getSalt());
+            riskService.clearRisk();
+            Map<String, Object> ret = new HashMap<String, Object>();
+            ret.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            ret.put(UserCenterConstants.USER_ID, _userEntity.getUserId());
+            ret.put("passport", requestData.getPassport());
+            ret.put("checked", StringUtils.isNotEmpty(_userEntity.getIdCardName()) && StringUtils.isNotEmpty(_userEntity.getIdCardNo()));
+            ret.put("card", _userEntity.getIdCardNo());
+            return JSONObject.toJSONString(BaseResponse.success(ret));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+
+    /**
+     * 获取用户的详情 基本信息，详情，认证信息
+     *
+     * @return
+     */
+    @OperateType(bizType = BizType.getUserInfo)
+    @RequestMapping(value = "/getByToken", method = RequestMethod.POST)
+    @ResponseBody
+    public String getUserInfo(RequestData requestData) {
+        try {
+            UserEntity _userEntity = null;
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                logger.error("账户信息不存在redis中 --> passport:{}", requestData.getPassport());
+                throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode());
+            }
+            BUEnum bu = CommonUtil.validateBuId(requestData.getBuId());
+            logger.info("各平台登录记录:{};本次需记录的是:{}", _userEntity.getLoginRec(), bu.getLoginPlatformCode());
+            if (!StringUtils.contains(_userEntity.getLoginRec(), bu.getLoginPlatformCode())) {
+                _userEntity.setLoginRec(StringUtils.isBlank(_userEntity.getLoginRec()) ? bu.getLoginPlatformCode() + "," : _userEntity.getLoginRec() + bu.getLoginPlatformCode() + ",");
+                amqpTemplate.convertAndSend("user_login_platform_record_queue_key", _userEntity); //异步通知使用rabbitmq
+                logger.info("各平台登录记录完成:{}", _userEntity.getLoginRec());
+                BizUtil.updateUserCache(_userEntity);
+            }
+            UserAllInOne userAllInOne = new UserAllInOne();
+            BeanUtils.copyProperties(userAllInOne, _userEntity);
+            userAllInOne.setAvatar(_userEntity.getAvatarUrl());
+            userAllInOne.setName(_userEntity.getIdCardName());
+            userAllInOne.setCard(_userEntity.getIdCardNo());
+            String str = JSONObject.toJSONString(BaseResponse.success(userAllInOne), SerializerFeature.WriteNullStringAsEmpty);
+            requestData.setRecType("0");
+            CollectDataLog.recordLog(requestData, _userEntity);
+            return str;
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 修改用户信息
+     *
+     * @return
+     */
+    @OperateType(bizType = BizType.modifyAttr)
+    @RequestMapping(value = "modify", method = RequestMethod.POST)
+    @ResponseBody
+    public String modify(RequestData requestData) {
+        try {
+            String[] dbTblIdx = requestData.getDbTblIdx().split("-");
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                logger.error("账户信息不存在redis中,修改用户信息失败 --> userId:{}", requestData.getUserId());
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            logger.info("查询所得用户基本信息userValue,{}", userValue);
+
+            TokenUtil.validateTokenSign(requestData.getAccessToken(), _userEntity.getSalt());
+
+            _userEntity.setUserName(requestData.getUserName());
+            _userEntity.setGender(requestData.getGender());
+            _userEntity.setBirthday(StringUtils.isNotBlank(requestData.getBirthday()) ? new SimpleDateFormat("yyyy-MM-dd").parse(requestData.getBirthday()) : null);
+            _userEntity.setProvince(requestData.getProvince());
+            _userEntity.setCity(requestData.getCity());
+            _userEntity.setAddressDetail(requestData.getAddressDetail());
+            _userEntity.setAge(requestData.getAge());
+            _userEntity.setQqNo(requestData.getQqNo());
+            UserEntity.Builder _userBuilder = new UserEntity.Builder();
+            _userBuilder.userName(requestData.getUserName()).gender(requestData.getGender()).age(requestData.getAge());
+            _userBuilder.birthday(StringUtils.isNotBlank(requestData.getBirthday()) ? new SimpleDateFormat("yyyy-MM-dd").parse(requestData.getBirthday()) : null);
+            _userBuilder.province(requestData.getProvince()).city(requestData.getCity()).addressDetail(requestData.getAddressDetail());
+            _userBuilder.qqNo(requestData.getQqNo());
+            if (!userService.updateUserById(dbTblIdx[1], dbTblIdx[2], _userBuilder.build())) {
+                logger.error("更新失败!entity = {}, userId = ", _userBuilder.build(), requestData.getUserId());
+                JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            BizUtil.updateUserCache(_userEntity);//更新缓存信息
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 绑定账号
+     *
+     * @return
+     * @RequestParam(defaultValue = "86") String countryCode,
+     * String accessToken,
+     * String passport,
+     * String verifyCode,  绑定 验证码
+     * String smsToken, 换绑 验证码
+     * Boolean isChange,  是否换绑
+     * String clientId,
+     * String buId
+     */
+    @OperateType(bizType = BizType.bind)
+    @RequestMapping(value = "bind", method = RequestMethod.POST)
+    @ResponseBody
+    public String bind(RequestData requestData, HttpServletRequest request) {
+        try {
+            String isChange = request.getParameter("isChange");
+            PassportType type = validatePassport(requestData.getCountryCode(), requestData.getPassport());
+            // 获取用户的基本信息
+            String[] dbTblIdx = requestData.getDbTblIdx().split("-");
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                logger.error("账户信息不存在redis中,操作失败 --> userId:{}", requestData.getUserId());
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            //账户换绑且注册类型与换绑类型相同则不可换绑
+            if (isChange.equals("true") && _userEntity.getRegisterBy().equals(type.name())) {
+                logger.error("不能绑定相同类型的账号");
+                throw new BizException(ErrorCode.BIND_SAME_TYPE.getCode());
+            }
+            TokenUtil.validateTokenSign(requestData.getAccessToken(), _userEntity.getSalt());
+            String passPortIdxKey = null;
+            switch (type) {
+                case mobile: {
+                    if (isChange.equals("true")) { //换绑
+//                        requestData.setPassport(_userEntity.getMobile());
+                        SMSUtils.validateSmsToken(_userEntity.getMobile(), requestData.getSmsToken(), requestData.getClientId(), BizType.changeBind.name());
+                    }
+                    SMSUtils.verifySmsCode(requestData.getCountryCode(), requestData.getPassport(), requestData.getVerifyCode(), requestData.getClientId(), BizType.bind.name());
+                    passPortIdxKey = RedisContant.MOBILE_BASIC_IDX;
+                    break;
+                }
+                case email: {
+                    if (isChange.equals("true")) { //换绑
+//                        requestData.setPassport(_userEntity.getEmail());
+                        MailUtil.validateEmailToken(_userEntity.getEmail(), requestData.getSmsToken(), requestData.getClientId(), BizType.changeBind.name());
+                    }
+                    MailUtil.verifyCode(requestData.getPassport(), requestData.getClientId(), BizType.bind.name(), requestData.getVerifyCode());
+                    passPortIdxKey = RedisContant.EMAIL_BASIC_IDX;
+                    break;
+                }
+            }
+            String userInfo = RedisUtil.hget(passPortIdxKey, requestData.getPassport());
+            if (StringUtils.isNotBlank(userInfo)) {
+                logger.error("绑定账号已存在,UserId{}", requestData.getUserId());
+                throw new BizException(ErrorCode.BIND_PASSPORT_EXIST.getCode());
+            }
+            UserEntity.Builder builder = new UserEntity.Builder().updateTime(new Date());
+            // 更新用户基本信息中的手机号码/邮箱
+            if (type == PassportType.mobile) {
+                //新增绑定账号的索引
+                if (isChange.equals("false")) {//绑定
+                    _userEntity.setMobile(requestData.getPassport());
+                    RedisUtil.hset(RedisContant.MOBILE_IDX, requestData.getPassport(), requestData.getDbTblIdx());
+                    RedisUtil.hset(RedisContant.MOBILE_BASIC_IDX, requestData.getPassport(), JSONObject.toJSONString(_userEntity));
+                } else { //换绑
+                    RedisUtil.hdel(RedisContant.MOBILE_IDX, _userEntity.getMobile());
+                    RedisUtil.hdel(RedisContant.MOBILE_BASIC_IDX, _userEntity.getMobile());
+                    _userEntity.setMobile(requestData.getPassport());
+                    RedisUtil.hset(RedisContant.MOBILE_IDX, requestData.getPassport(), requestData.getDbTblIdx());
+                    RedisUtil.hset(RedisContant.MOBILE_BASIC_IDX, requestData.getPassport(), JSONObject.toJSONString(_userEntity));
+                }
+                _userEntity.setCountryCode(requestData.getCountryCode());
+                builder.countryCode(_userEntity.getCountryCode()).mobile(_userEntity.getMobile());
+                //更新缓存
+                RedisUtil.hset(RedisContant.EMAIL_BASIC_IDX, _userEntity.getEmail(), JSONObject.toJSONString(_userEntity));
+            }
+            if (type == PassportType.email) {
+                //新增绑定账号的索引
+                if (isChange.equals("false")) { //绑定
+                    _userEntity.setEmail(requestData.getPassport());
+                    RedisUtil.hset(RedisContant.EMAIL_IDX, requestData.getPassport(), requestData.getDbTblIdx());
+                    RedisUtil.hset(RedisContant.EMAIL_BASIC_IDX, requestData.getPassport(), JSONObject.toJSONString(_userEntity));
+                } else {
+                    RedisUtil.hdel(RedisContant.EMAIL_IDX, _userEntity.getEmail());
+                    RedisUtil.hdel(RedisContant.EMAIL_BASIC_IDX, _userEntity.getEmail());
+                    _userEntity.setEmail(requestData.getPassport());
+                    RedisUtil.hset(RedisContant.EMAIL_IDX, requestData.getPassport(), requestData.getDbTblIdx());
+                    RedisUtil.hset(RedisContant.EMAIL_BASIC_IDX, requestData.getPassport(), JSONObject.toJSONString(_userEntity));
+                }
+                builder.email(_userEntity.getEmail());
+                //更新缓存
+                RedisUtil.hset(RedisContant.MOBILE_BASIC_IDX, _userEntity.getMobile(), JSONObject.toJSONString(_userEntity));
+            }
+
+            //更新
+            if (!userService.updateUserById(dbTblIdx[1], dbTblIdx[2], builder.build())) {
+                logger.error("更新失败!entity = {}, userId = ", _userEntity, requestData.getUserId());
+                JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            //更新缓存
+            RedisUtil.hset(RedisContant.USER_BASIC_IDX, requestData.getUserId(), JSONObject.toJSONString(_userEntity));
+            //三方授权登录缓存更新
+            ThirdPartyEnum thirdPartyEnum = null;
+            if (StringUtils.isNotBlank(_userEntity.getThirdId()) && StringUtils.isNotBlank(_userEntity.getOpenId())
+                    && null != (thirdPartyEnum = ThirdPartyEnum.getFromKey(_userEntity.getThirdId()))) {
+                RedisUtil.hset(thirdPartyEnum.getOpenIdUserKey(), _userEntity.getOpenId(), JSONObject.toJSONString(_userEntity));
+            }
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    public static void main(String[] args) {
+
+        System.out.println(JSONObject.toJSONString(new UserAllInOne(), SerializerFeature.WriteNullStringAsEmpty));
+    }
+
+}

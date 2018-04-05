@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.user.UserDetailMapper" >
+  <resultMap id="BaseResultMap" type="com.qbao.store.entity.user.UserDetailEntity" >
+    <id column="user_id" property="userId" jdbcType="VARCHAR" />
+    <result column="age" property="age" jdbcType="INTEGER" />
+   	<result column="gender" property="gender" jdbcType="VARCHAR" />
+    <result column="profile" property="profile" jdbcType="VARCHAR" />
+    <result column="avatar" property="avatar" jdbcType="VARCHAR" />
+    <result column="birthday" property="birthday" />
+    <result column="province" property="province" jdbcType="VARCHAR" />
+    <result column="city" property="city" jdbcType="VARCHAR" />
+    <result column="district" property="district" jdbcType="VARCHAR" />
+    <result column="street" property="street" jdbcType="VARCHAR" />
+    <result column="address_detail" property="addressDetail" jdbcType= "VARCHAR" />
+    <result column="allow_third_modify" property="allowThirdModify" jdbcType= "VARCHAR" />
+	<result column="create_time" property="createTime" jdbcType="DATE" />
+    <result column="update_time" property="updateTime" jdbcType="DATE" />
+    
+    <result column="qq_no" property="qqNo" jdbcType="VARCHAR" />
+  </resultMap>
+  <sql id="base_column_list" >
+    user_id, age, gender, profile, avatar, birthday, province, city, district, street,qq_no,
+     address_detail,allow_third_modify,create_time,update_time
+  </sql>
+  
+  <!-- 查询 -->
+  <select id="queryById" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from ${tableName}
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </select>
+  
+  <!-- 根据性别查询随机用户 -->
+  <select id="queryRandomUserByGender" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from ${tableName}
+    where gender = #{gender,jdbcType=VARCHAR} and user_id >= ((SELECT MAX(user_id) FROM ${tableName})-(SELECT MIN(user_id) FROM ${tableName})) * RAND() 
+    + (SELECT MIN(user_id) FROM ${tableName}) LIMIT 1
+  </select>
+  
+   <!-- 假删除，更新用户状态0：正常，1：注销，2：禁用 -->
+  <update id="deleteById" parameterType="java.lang.String" >
+    update ${tableName} set status = 1 and update_time = now()
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </update>
+  
+  	<!-- 添加操作 -->
+  <insert id="insert" parameterType="com.qbao.store.entity.user.UserDetailEntity" >
+    insert into ${tableName}
+    <trim prefix="(" suffix=")" suffixOverrides="," >
+      <if test="entity.userId != null and entity.userId != ''" >
+        user_id,
+      </if>
+      <if test="entity.age != null" >
+        age,
+      </if>
+      <if test="entity.gender != null and entity.gender!= ''" >
+        gender,
+      </if>
+      <if test="entity.profile != null and entity.profile!= ''" >
+        profile,
+      </if>
+      <if test="entity.avatar != null and entity.avatar!= ''" >
+        avatar,
+      </if>
+      <if test="entity.birthday !=null and entity.birthday!= ''">
+      	birthday,
+      </if>
+      <if test="entity.province !=null and entity.province!= ''">
+      	province,
+      </if>
+      <if test="entity.city != null and entity.city!= ''" >
+        city,
+      </if>
+      <if test="entity.district != null and entity.district!= ''" >
+        district,
+      </if>
+      <if test="entity.street != null and entity.street!= ''" >
+        street,
+      </if>
+      <if test="entity.addressDetail != null and entity.addressDetail != ''" >
+        address_detail,
+      </if>
+      <if test="entity.allowThirdModify != null and entity.allowThirdModify != ''" >
+        allow_third_modify,
+      </if>
+        create_time,
+      <if test="entity.qqNo != null and entity.qqNo != ''" >
+        qq_no,
+      </if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides="," >
+      <if test="entity.userId != null and entity.userId != ''" >
+        #{entity.userId,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.age != null" >
+        #{entity.age,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.gender != null and entity.gender != ''" >
+        #{entity.gender,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.profile != null and entity.profile != ''" >
+        #{entity.profile,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.avatar != null and entity.avatar != ''" >
+        #{entity.avatar,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.birthday !=null and entity.birthday != ''">
+      	#{entity.birthday,jdbcType=Date},
+      </if>
+      <if test="entity.province !=null and entity.province != ''">
+      	#{entity.province,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.city != null and entity.city != ''" >
+        #{entity.city,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.district != null and entity.district != ''" >
+        #{entity.district,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.street != null and entity.street != ''" >
+        #{entity.street,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.addressDetail != null and entity.addressDetail != ''" >
+        #{entity.addressDetail,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.allowThirdModify != null and entity.allowThirdModify != ''" >
+        #{entity.allowThirdModify,jdbcType=VARCHAR},
+      </if>
+        now(),
+       <if test="entity.qqNo != null and entity.qqNo != ''" >
+         #{entity.qqNo,jdbcType=VARCHAR},
+      </if>
+    </trim>
+  </insert>
+  
+ 	<!--  更新操作 -->
+  <update id="update" parameterType="com.qbao.store.entity.user.UserDetailEntity" >
+    update ${tableName}
+    <set >
+    <if test="entity.age != null" >
+        age = #{entity.age},
+      </if>
+      <if test="entity.gender != null and entity.gender!= ''" >
+        gender = #{entity.gender},
+      </if>
+      <if test="entity.profile != null and entity.profile!= ''" >
+        profile = #{entity.profile},
+      </if>
+      <if test="entity.avatar != null and entity.avatar!= ''" >
+        avatar = #{entity.avatar},
+      </if>
+      <if test="entity.birthday !=null and entity.birthday!= ''">
+      	birthday = #{entity.birthday},
+      </if>
+      <if test="entity.province !=null and entity.province!= ''">
+      	province = #{entity.province},
+      </if>
+      <if test="entity.city != null and entity.city!= ''" >
+        city = #{entity.city},
+      </if>
+      <if test="entity.district != null and entity.district!= ''" >
+        district = #{entity.district},
+      </if>
+      <if test="entity.street != null and entity.street!= ''" >
+        street = #{entity.street},
+      </if>
+      <if test="entity.addressDetail != null and entity.addressDetail != ''" >
+        address_detail = #{entity.addressDetail},
+      </if>
+      <if test="entity.allowThirdModify != null and entity.allowThirdModify != ''" >
+        allow_third_modify = #{entity.allowThirdModify},
+      </if>
+        update_time = now(),
+      <if test="entity.qqNo != null and entity.qqNo != ''" >
+         qq_no = #{entity.qqNo,jdbcType=VARCHAR},
+      </if>
+    </set>
+    where user_id = #{entity.userId}
+  </update>
+</mapper>

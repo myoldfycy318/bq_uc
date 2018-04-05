@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.openPlatform.OpenPlatformBasicMapper" >
+  <resultMap id="BaseResultMap" type="com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity" >
+    <id column="user_id" property="userId" jdbcType="VARCHAR" />
+   	<result column="open_id" property="openId" jdbcType="VARCHAR" />
+    <result column="mobile" property="mobile" jdbcType="VARCHAR" />
+    <result column="email" property="email" jdbcType="VARCHAR" />
+    <result column="user_name" property="userName" jdbcType="VARCHAR" />
+    <result column="email_status" property="emailStatus" jdbcType="VARCHAR" />
+    <result column="password" property="password" jdbcType="VARCHAR" />
+    <result column="salt" property="salt" jdbcType="VARCHAR" />
+    <result column="status" property="status" jdbcType="INTEGER" />
+    <result column="create_time" property="createTime" jdbcType="DATE" />
+    <result column="update_time" property="updateTime" jdbcType="DATE" />
+  </resultMap>
+  <sql id="base_column_list" >
+    user_id, open_id, mobile, email, user_name, email_status, password, salt, status, create_time, update_time
+  </sql>
+  
+  <!-- 查询用户基本信息 -->
+  <select id="queryById" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from open_platform_basic
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </select>
+  
+  <!-- 根据手机查询用户基本信息 -->
+  <select id="queryByMobile" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from open_platform_basic
+    where mobile = #{mobile,jdbcType=VARCHAR}
+  </select>
+  
+  <!-- 根据邮箱查询用户基本信息 -->
+  <select id="queryByEmail" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from open_platform_basic
+    where email = #{email,jdbcType=VARCHAR}
+  </select>
+  
+  <!-- 假删除，更新用户状态0：正常，1：注销，2：禁用 -->
+  <update id="deleteById" parameterType="java.lang.String" >
+    update open_platform_basic set status = 1 and update_time = now()
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </update>
+  
+  <!-- 添加用户 -->
+  <insert id="insert" parameterType="com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity" >
+    insert into open_platform_basic
+    <trim prefix="(" suffix=")" suffixOverrides="," >
+      <if test="entity.userId != null and entity.userId != ''" >
+        user_id,
+      </if>
+      <if test="entity.openId != null and entity.openId != ''" >
+        open_id,
+      </if>
+      <if test="entity.mobile != null and entity.mobile != ''" >
+        mobile,
+      </if>
+      <if test="entity.email !=null and entity.email != ''">
+      	email,
+      </if>
+      <if test="entity.userName !=null and entity.userName != ''">
+      	user_name,
+      </if>
+      <if test="entity.emailStatus !=null and entity.emailStatus != ''">
+      	email_status,
+      </if>
+      <if test="entity.password !=null and entity.password != ''">
+      	password,
+      </if>
+      <if test="entity.salt != null and entity.salt != ''" >
+        salt,
+      </if>
+        create_time
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides="," >
+      <if test="entity.userId != null and entity.userId != ''" >
+        #{entity.userId,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.openId != null and entity.openId != ''" >
+        #{entity.openId,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.mobile != null and entity.mobile != ''" >
+        #{entity.mobile,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.email !=null and entity.email != ''">
+      	#{entity.email,jdbcType=VARCHAR},
+      </if>
+       <if test="entity.userName !=null and entity.userName != ''">
+      	#{entity.userName,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.emailStatus !=null and entity.emailStatus != ''">
+      	#{entity.emailStatus,jdbcType=INTEGER},
+      </if>
+      <if test="entity.password !=null and entity.password != ''">
+      	#{entity.password,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.salt != null and entity.salt != ''" >
+        #{entity.salt,jdbcType=VARCHAR},
+      </if>
+        now()
+    </trim>
+  </insert>
+  
+	<!--   更新用户 -->
+  <update id="update" parameterType="com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity" >
+    update open_platform_basic
+    <set >
+      <if test="entity.openId != null and entity.openId != ''" >
+        open_id = #{entity.openId,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.mobile != null and entity.mobile != ''" >
+        mobile = #{entity.mobile,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.email !=null and entity.email != ''">
+      	email = #{entity.email,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.userName !=null and entity.userName != ''">
+      	user_name = #{entity.userName,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.emailStatus !=null and entity.emailStatus != ''">
+      	email_status = #{entity.emailStatus,jdbcType=INTEGER},
+      </if>
+      <if test="entity.password !=null and entity.password != ''">
+      	password = #{entity.password,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.salt != null and entity.salt != ''" >
+        salt = #{entity.salt,jdbcType=VARCHAR},
+      </if>
+      <if test="entity.status != null and entity.status != ''" >
+        status = #{entity.status,jdbcType=INTEGER},
+      </if>
+        update_time = now()
+    </set>
+    where user_id = #{entity.userId,jdbcType=VARCHAR}
+  </update>
+</mapper>

@@ -1,0 +1,70 @@
+package com.qbao.store.service;
+
+import com.bqiong.usercenter.constants.PassportType;
+import com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月21日 下午3:38:12 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月21日 下午3:38:12 	修改人：
+ *  	描述	:
+ ***********************************************************
+ */
+public interface LoginService 
+{
+  /**
+   * 
+   *  函数名称 : login
+   *  功能描述 :  
+   *  参数及返回值说明：
+ * @param countryCode TODO
+ * @param passport
+ * @param password
+ * @param passportType TODO
+   *  	@return TODO
+   *  	@throws Exception
+   *
+   *  修改记录：
+   *  	日期 ：2016年4月21日 下午3:38:07	修改人：  nz
+   *  	描述	：
+   *
+   */
+    public UserBasicEntity login(String countryCode, String passport, String password, PassportType passportType) throws Exception;
+    
+    /**
+     * 
+     *  函数名称 : login4OpenPlatform
+     *  功能描述 :  
+     *  参数及返回值说明：
+     *  	@param passport
+     *  	@param password
+     *  	@return
+     *
+     *  修改记录：
+     *  	日期 ：2016年5月11日 上午9:55:16	修改人：  nz
+     *  	描述	：
+     *
+     */
+    public OpenPlatformBasicEntity login4OpenPlatform(String passport, String password);
+    
+    /**
+     * 
+     *  函数名称 : isPassportExist4OpenPlatform
+     *  功能描述 :  
+     *  参数及返回值说明：
+     *  	@param passport
+     *  	@return
+     *
+     *  修改记录：
+     *  	日期 ：2016年8月18日 上午10:09:26	修改人：  
+     *  	描述	：
+     *
+     */
+    public boolean isPassportExist4OpenPlatform(String passport);
+}

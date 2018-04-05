@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:mvc="http://www.springframework.org/schema/mvc" xmlns:aop="http://www.springframework.org/schema/aop"
+    xsi:schemaLocation="http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-4.0.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd
+        http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.0.xsd">
+
+    <!-- 配置默认首页 -->
+    <mvc:view-controller path="/" view-name="redirect:/index.htm" /> 
+    <context:component-scan base-package="com.qbao.store.controller.*" />
+
+    <!-- 支持对静态资源文件的访问 -->
+    <mvc:default-servlet-handler />
+
+    <mvc:annotation-driven>
+    </mvc:annotation-driven>
+
+    <bean class="com.qbao.store.core.web.servlet.handler.CustomSimpleMappingExceptionResolver">
+        <property name="defaultErrorView" value="error"></property>
+        <property name="defaultStatusCode" value="500"></property>
+        <!-- <property name="statusCodes">
+            <props>
+            <prop key="error">500</prop>
+            <prop key="unknowError">404</prop>
+            </props>
+            </property> -->
+        <property name="exceptionMappings">
+            <props>
+                <prop key="java.lang.Exception">error/exception</prop>
+            </props>
+        </property>
+    </bean>
+
+    <!--以下是通用视图解析器，jsp视图其实就一个异常视图 -->
+    <bean id="viewResolverCommon" class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <property name="prefix" value="/WEB-INF/pages/" />
+        <property name="suffix" value=".jsp" />
+        <property name="viewClass">
+            <value>org.springframework.web.servlet.view.InternalResourceView</value>
+        </property>
+    </bean>
+
+    <!-- spring代理HttpSession -->
+    <bean id="appSession" class="com.qbao.store.core.web.servlet.AppSession" scope="session">
+        <aop:scoped-proxy />
+    </bean>
+
+    <!-- SpringMVC上传文件时，需要配置MultipartResolver处理器 -->
+    <bean id="multipartResolver" class="org.springframework.web.multipart.commons.CommonsMultipartResolver">
+        <property name="defaultEncoding" value="UTF-8" />
+    </bean>
+</beans>

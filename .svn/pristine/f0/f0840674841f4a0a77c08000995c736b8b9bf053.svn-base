@@ -1,0 +1,57 @@
+package com.qbao.store.service;
+
+import com.bqiong.usercenter.constants.PassportType;
+import com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月29日 下午3:15:43 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月29日 下午3:15:43 	修改人：
+ *  	描述	:
+ ***********************************************************
+ */
+public interface PasswordService 
+{
+	/**
+	 * 
+	 *  函数名称 : findPassword
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 * @param countryCode TODO
+	 * @param passport
+	 * @param password
+	 * @param passportType
+	 *  	@return
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月29日 下午3:15:35	修改人：  
+	 *  	描述	：
+	 *
+	 */
+    public UserBasicEntity resetPassword(String countryCode, String passport, String password, PassportType passportType) throws Exception;
+    
+    /**
+     * 
+     *  函数名称 : resetPassword4Open
+     *  功能描述 :  
+     *  参数及返回值说明：
+     *  	@param passport
+     *  	@param password
+     *  	@return
+     *  	@throws Exception
+     *
+     *  修改记录：
+     *  	日期 ：2016年5月12日 下午2:10:34	修改人：  
+     *  	描述	：
+     *
+     */
+    public OpenPlatformBasicEntity resetPassword4Open(String passport, String password) throws Exception;
+    
+}

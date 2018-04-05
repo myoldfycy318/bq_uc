@@ -1,0 +1,218 @@
+package com.qbao.store.entity.request;
+
+import java.util.Date;
+
+import com.bqiong.usercenter.constants.BizType;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年7月6日 下午2:41:52 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年8月6日 下午2:41:52 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public class RequestData {
+	
+	private String uri;
+	
+	/**
+	 * 业务类型
+	 */
+	private BizType bizType;
+    
+
+	/**
+     * 手机号码.
+     */
+    private String mobile;
+    
+    /**
+     * captchaKey
+     */
+    private String captchaKey;
+    
+    //图片验证码
+    private String captcha;
+
+    /**
+     * 邮箱.
+     */
+    private String email;
+
+    /**
+     * 来源业务单元.
+     */
+    private String buId;
+
+    /**
+     * 来源appcode.
+     */
+    private String clientId;
+
+    /**
+     * 第三方id.
+     */
+    private Integer thirdId;
+
+    /**
+     * 第三方对外openid.
+     */
+    private String openId;
+
+    /**
+     * 操作类型.
+     */
+    private Integer operationType;
+
+    /**
+     * 操作时间.
+     */
+    private Date operationTime;
+
+    /**
+     * 用户来源ip.
+     */
+    private String userIp;
+    
+    /**
+     * app版本号
+     */
+    private String appVersion;
+    
+
+    private String countryCode;
+    
+    public String getUri() {
+		return uri;
+	}
+
+	public void setUri(String uri) {
+		this.uri = uri;
+	}
+
+	public BizType getBizType() {
+		return bizType;
+	}
+
+	public void setBizType(BizType bizType) {
+		this.bizType = bizType;
+	}
+
+    public String getMobile() {
+        return mobile;
+    }
+
+    public void setMobile(String mobile) {
+        this.mobile = mobile;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getBuId() {
+        return buId;
+    }
+
+    public void setBuId(String buId) {
+        this.buId = buId;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
+
+    public void setClientId(String clientId) {
+        this.clientId = clientId;
+    }
+
+    public Integer getThirdId() {
+        return thirdId;
+    }
+
+    public void setThirdId(Integer thirdId) {
+        this.thirdId = thirdId;
+    }
+
+    public String getOpenId() {
+        return openId;
+    }
+
+    public void setOpenId(String openId) {
+        this.openId = openId;
+    }
+
+    public Integer getOperationType() {
+        return operationType;
+    }
+
+    public void setOperationType(Integer operationType) {
+        this.operationType = operationType;
+    }
+
+    public Date getOperationTime() {
+        return operationTime;
+    }
+
+    public void setOperationTime(Date operationTime) {
+        this.operationTime = operationTime;
+    }
+
+    public String getUserIp() {
+        return userIp;
+    }
+
+    public void setUserIp(String userIp) {
+        this.userIp = userIp;
+    }
+    
+	public String getCaptchaKey() {
+		return captchaKey;
+	}
+
+	public void setCaptchaKey(String captchaKey) {
+		this.captchaKey = captchaKey;
+	}
+	
+	public String getAppVersion() {
+		return appVersion;
+	}
+
+	public void setAppVersion(String appVersion) {
+		this.appVersion = appVersion;
+	}
+
+	public String getCaptcha() {
+		return captcha;
+	}
+
+	public void setCaptcha(String captcha) {
+		this.captcha = captcha;
+	}
+	
+	public String getCountryCode() {
+		return countryCode;
+	}
+	
+	public void setCountryCode(String countryCode) {
+		this.countryCode = countryCode;
+	}
+
+	@Override
+	public String toString() {
+		return "RequestData [uri=" + uri + ", bizType=" + bizType + ", mobile=" + mobile + ", captchaKey=" + captchaKey
+				+ ", email=" + email + ", buId=" + buId + ", clientId=" + clientId + ", thirdId=" + thirdId
+				+ ", openId=" + openId + ", operationType=" + operationType + ", operationTime=" + operationTime
+				+ ", userIp=" + userIp + ", appVersion=" + appVersion + ", countryCode="+countryCode+"]";
+	}
+
+}

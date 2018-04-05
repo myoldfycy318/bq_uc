@@ -1,0 +1,132 @@
+package com.qbao.store.controller.tourist;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.LoginTypeEnum;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MailUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.tourist.TouristBindService;
+import com.qbao.store.util.UserCenterContext;
+
+@Controller
+@RequestMapping("/tourist")
+public class TouristController extends BaseController {
+    private Logger logger = LoggerFactory.getLogger(TouristController.class);
+    @Autowired
+    TouristBindService touristBindService;
+
+    @Autowired
+    RegisterService registerService;
+
+    @RequestMapping("/login")
+    @ResponseBody
+    public String login(@RequestParam("imsi") String imsi, String clientId, String buId, HttpServletRequest request) {
+        try {
+            if (StringUtils.isBlank(imsi)) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            UserBasicEntity entity = touristBindService.touristLogin(imsi, buId);
+            log.info("entity:{}", JSONObject.toJSONString(entity));
+            int isBind = touristBindService.isBind(imsi);
+            UserCenterContext.buildUserBasicInfo2LogEntity(entity);
+            String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());
+            RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.tourist.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+            Map<String, Object> data = new HashMap<String, Object>();
+            data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            data.put(UserCenterConstants.IS_BIND, isBind);
+            logger.info("xxxxxx:{}", JSON.toJSONString(entity));
+            String passport = "";
+            if (isBind == 1) {
+
+                if (entity.getMobile() != null && !entity.getMobile().startsWith("100")) {
+                    passport = entity.getMobile();
+                }
+
+                if (entity.getEmail() != null) {
+                    passport = entity.getEmail();
+                }
+            }
+            data.put("passport", passport);
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("", e);
+        }
+    }
+
+    @RequestMapping("/bind")
+    @ResponseBody
+    public String bind(@RequestParam("imsi") String imsi,
+                       String clientId,
+                       String buId,
+                       @RequestParam("channelId") String channelId,
+                       @RequestParam(defaultValue = "86") String countryCode,
+                       @RequestParam("passport") String passport,
+                       @RequestParam("password") String password,
+                       @RequestParam("verifyCode") String verifyCode,
+                       HttpServletRequest request) {
+        try {
+            if (StringUtils.isBlank(imsi)) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+
+            PassportType type = validatePassport(countryCode, passport);
+            if (PassportType.mobile == type) {
+                SMSUtils.verifySmsCode(countryCode, passport, verifyCode, clientId, BizType.bind.name());
+            }
+            if (PassportType.email == type) {
+                MailUtil.verifyCode(passport, clientId, BizType.bind.name(), verifyCode);
+                countryCode = "";
+            }
+
+            UserBasicEntity entity = touristBindService.bind(imsi, countryCode, passport, password, buId, channelId);
+            String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());
+            RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.passport.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            data.put("passport", passport);
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("", e);
+        }
+    }
+
+}

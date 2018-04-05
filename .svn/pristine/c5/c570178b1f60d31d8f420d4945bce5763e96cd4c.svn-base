@@ -1,0 +1,124 @@
+package com.bqiong.usercenter.constants;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.commons.lang.StringUtils;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年7月6日 下午3:21:53 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年7月6日 下午3:21:53 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public class RequestDataHelper 
+{
+	public static final String DEF_NOTHIRDPARTY_LOGIN = "0";
+	
+	public static final String LOGIN_TIME = "loginTime";
+	
+	public static final String RESPONSE_CODE = "responseCode";
+	
+	public static final String PASSPORT = "passport";
+	
+	public static final String USER_ID = "userId";
+	
+	public static final String CLIENT_ID = "clientId";
+	
+	public static final String THIRD_ID = "thirdId";
+	
+	public static final String OPEN_ID = "openId";
+	
+	public static final String QBAO_UID = "qbaoUid";
+	
+	private static String needLogParamNamesStr = "buId";
+	
+	private static List<String> needLogParameterNames = new ArrayList<String>();
+	
+	private static Map<String, BizType> hadoopUriMap = new HashMap<String, BizType>();
+	
+	private static Map<String, Boolean> needRiskUriMap = new HashMap<String, Boolean>();
+	
+	private static Map<String, BizType> riskUriBizTypeMap = new HashMap<String, BizType>();
+	
+	private static Map<String, ThirdPartyEnum> uriThirdPartyMap = new HashMap<String, ThirdPartyEnum>();
+	
+	
+	public static void init()
+	{
+		//设置哪些接口需要hadoop日志
+		String[] strs = needLogParamNamesStr.split(",");
+		Collections.addAll(needLogParameterNames, strs);
+		hadoopUriMap.put("/login/login", BizType.login);
+		hadoopUriMap.put("/v2/user/login", BizType.login);
+		hadoopUriMap.put("/qbao/login", BizType.login);
+		hadoopUriMap.put("/tourist/login", BizType.login);
+		hadoopUriMap.put("/register/registerConfirm", BizType.register);
+		hadoopUriMap.put("/user/resetPassword", BizType.resetPassword);
+		hadoopUriMap.put("/user/modifyPassword", BizType.modifyPassword);
+		hadoopUriMap.put("/mobile/getCode", BizType.getCode);
+		
+		riskUriBizTypeMap.put("/login/login", BizType.login);
+		riskUriBizTypeMap.put("/v2/user/login", BizType.login);
+		riskUriBizTypeMap.put("/register/registerConfirm", BizType.register);
+		riskUriBizTypeMap.put("/user/resetPassword", BizType.resetPassword);
+		riskUriBizTypeMap.put("/user/modifyPassword", BizType.modifyPassword);
+		riskUriBizTypeMap.put("/mobile/getCode", BizType.getCode);
+		
+		//设置哪些接口需要risk
+		needRiskUriMap.put("/login/login", true);
+		needRiskUriMap.put("/register/registerConfirm", false);
+		needRiskUriMap.put("/user/resetPassword", false);
+		needRiskUriMap.put("/user/modifyPassword", false);
+		needRiskUriMap.put("/mobile/getCode", true);
+		
+		//标识接口属于哪个第三方
+		uriThirdPartyMap.put("/qbao/login", ThirdPartyEnum.QBAO);
+		uriThirdPartyMap.put("/tourist/login", ThirdPartyEnum.TOURIST);
+	}
+
+	public static BizType getBizTypeByUri4Hadoop(String uri)
+	{
+		return hadoopUriMap.get(StringUtils.substringBefore(uri, "."));
+	}
+	
+	public static BizType getBizTypeByUri4Risk(String uri)
+	{
+		return riskUriBizTypeMap.get(StringUtils.substringBefore(uri, "."));
+	}
+	
+	public static ThirdPartyEnum getThirdPartyFromUri(String uri)
+	{
+		return uriThirdPartyMap.get(uri);
+	}
+	
+	/*public static boolean isTouristLogin(String uri)
+	{
+		if("/tourist/login".equals(uri)) return true;
+		return false;
+	}*/
+	
+	public static List<String> getNeedLogParameterNames() 
+	{
+		return needLogParameterNames;
+	}
+	
+	//获取需要进行分控的接口uri
+	public static boolean isNeedRiskUri(String uri)
+	{
+		if(needRiskUriMap.get(uri) != null && needRiskUriMap.get(uri) == true)
+		{
+			return true;
+		}
+		return false;
+	}
+}

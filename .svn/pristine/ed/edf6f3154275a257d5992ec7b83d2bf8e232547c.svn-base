@@ -1,0 +1,10 @@
+smscenter.url=http://smstest.qbao66.com
+mail.smtp.auth=true
+mail.smtp.host=smtp.exmail.qq.com
+mail.user=no-reply@domegame.cn
+mail.password=d8MsfT2Ivai77cjz
+ba.url=http://192.168.130.132:7571
+passKey=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCQhIvT60RAT0FJ8tqlV9wN1i8hE37h3IXOxxBwAxkqonFgHw8ucGKT3w8ApGhEgvdRegkHM8/y8MB3l/Q1YOdQMq5DNV5/nHSuYZOTyPE7YlgRj6Xve9KgsRdQT76JIPfCyJd2qCZzsVxsUENZppYPZHAITiOvd8zK9M4cagtkJwIDAQAB
+huanxin.appKey=domestore#domestore
+huanxin.appClientId=YXA6Pn83AES2EeauNeXkvdQzbg
+huanxin.appClientSecret=YXA60SXx_Pb7meGa-VbiTqU8Wj8Uof4

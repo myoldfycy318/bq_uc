@@ -1,0 +1,127 @@
+package com.qbao.store.controller.v2;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.LoginTypeEnum;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MailUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserCard;
+import com.qbao.store.service.UserCardService;
+import com.qbao.store.service.tourist.TouristBindService;
+
+/**
+ * 游客绑定
+ * 
+ * @author hunsy
+ *
+ */
+@Controller
+@RequestMapping(value = "v2/tourist")
+public class V2TouristController extends IBaseController {
+
+	@Autowired
+	private TouristBindService touristBindService;
+	@Autowired
+	private UserCardService userCardService;
+	
+	/**
+	 * 绑定账号
+	 * 
+	 * @param imsi			手机imsi
+	 * @param clientId		客户端id
+	 * @param buId			BUid
+	 * @param channelId		渠道号
+	 * @param countryCode	国家码
+	 * @param passport		账号
+	 * @param password		密码
+	 * @param verifyCode	验证码
+	 * @param needCard		是否需要实名认证
+	 * @param name			用户名
+	 * @param card			身份证
+	 * @return
+	 */
+	@RequestMapping("/bind")
+	@ResponseBody
+	public String bind(@RequestParam(defaultValue = "true") Boolean needCard,
+			@RequestParam(defaultValue = "86") String countryCode, String imsi,
+			String clientId, String buId, String channelId, String passport,
+			String password, String verifyCode, String name, String card) {
+		
+		try {
+			
+            if (StringUtils.isBlank(imsi)) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            
+            BUEnum buEnum = validateBuId(buId);
+            
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            PassportType type = validatePassport(countryCode, passport);
+            if (PassportType.mobile == type) {
+                SMSUtils.verifySmsCode(countryCode, passport, verifyCode, clientId, BizType.bind.name());
+            }
+            if (PassportType.email == type) {
+                MailUtil.verifyCode(passport, clientId, BizType.bind.name(), verifyCode);
+            }
+            //需要实名认证
+			if (needCard) {
+				// 验证姓名
+				validateNameInner(name);
+				// 验证身份证号
+				validateCardInner(card);
+			}
+            
+            //绑定
+            UserBasicEntity entity = touristBindService.bind(imsi, countryCode, passport, password, buId, channelId);
+            if (entity == null) {
+            	return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+			}
+            // 进行实名认证
+			if (needCard) {
+				UserCard userCard = new UserCard();
+				userCard.setClientId(clientId);
+				userCard.setMobile(passport);
+				userCard.setBuId(buId);
+				userCard.setCard(card);
+				userCard.setCountryCode(countryCode);
+				userCard.setName(name);
+				userCard.setUid(entity.getUserId());
+				userCardService.insert(userCard);
+			}
+
+            String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());
+            RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.passport.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            data.put("domeUserId", entity.getUserId());
+            data.put("passport", passport);
+            return JSONObject.toJSONString(BaseResponse.success(data));
+		} catch (Exception e) {
+			return handleException(e);
+		}
+	}
+
+}

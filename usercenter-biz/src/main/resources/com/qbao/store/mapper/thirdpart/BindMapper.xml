@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.thirdpart.BindMapper" >
+  <resultMap id="BaseResultMap" type="com.qbao.store.entity.thirdpart.BindEntity" >
+    <result column="third_id" property="thirdId" jdbcType="VARCHAR" />
+   	<result column="open_id" property="openId" jdbcType="VARCHAR" />
+   	<result column="user_id" property="userId" jdbcType="VARCHAR" />
+   	<result column="status" property="status" jdbcType="INTEGER" />
+   	<result column="create_time" property="createTime" jdbcType="DATE" />
+   	<result column="update_time" property="updateTime" jdbcType="DATE" />
+  </resultMap>
+  <sql id="base_column_list" >
+   	third_id, open_id, user_id, status, create_time, update_time
+  </sql>
+  
+  <!-- 通过第三方id查询绑定关系 -->
+  <select id="queryByThirdUid" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from ${tableName}
+    where open_id = #{openId,jdbcType=VARCHAR}
+  </select>
+  
+   <!-- 通过冰穹id查询绑定关系 -->
+  <select id="queryByDomeUid" resultMap="BaseResultMap">
+    select 
+    <include refid="base_column_list" />
+    from ${tableName}
+    where user_id = #{userId,jdbcType=VARCHAR} and third_id = #{thirdId, jdbcType=VARCHAR}
+  </select>
+  
+  <!-- 添加绑定关系-->
+  <insert id="insert" parameterType="com.qbao.store.entity.thirdpart.BindEntity" >
+    insert into ${tableName}
+    <trim prefix="(" suffix=")" suffixOverrides="," >
+     <if test="entity.thirdId != null and entity.thirdId != ''" >
+        third_id,
+     </if>
+     <if test="entity.openId != null and entity.openId != ''" >
+        open_id,
+     </if>
+     <if test="entity.userId != null and entity.userId != ''" >
+       user_id,
+     </if>
+     <if test="entity.status != null and entity.status != ''" >
+       status,
+     </if>
+     	create_time
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides="," >
+     <if test="entity.thirdId != null and entity.thirdId != ''" >
+        #{entity.thirdId, jdbcType=VARCHAR},
+     </if>
+     <if test="entity.openId != null and entity.openId != ''" >
+        #{entity.openId, jdbcType=VARCHAR},
+     </if>
+     <if test="entity.userId != null and entity.userId != ''" >
+       #{entity.userId, jdbcType=VARCHAR},
+     </if>
+     <if test="entity.status != null and entity.status != ''" >
+       #{entity.status, jdbcType=VARCHAR},
+     </if>
+     	now()
+    </trim>
+  </insert>
+  
+</mapper>

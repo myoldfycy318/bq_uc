@@ -1,0 +1,345 @@
+package com.qbao.store.service.impl;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.entity.index.EmailIndexEntity;
+import com.qbao.store.entity.index.MobileIndexEntity;
+import com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserDetailEntity;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.mapper.user.UserMapper;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.UserDetailService;
+import com.qbao.store.service.UserRegisterExtraService;
+import com.qbao.store.service.index.EmailIndexService;
+import com.qbao.store.service.index.MobileIndexService;
+import com.qbao.store.service.openPlatform.OpenPlatformService;
+import com.qbao.store.util.CommonUtil;
+import com.qbao.store.util.MD5Util;
+import com.qbao.store.util.UserIdGenerator;
+import org.apache.commons.beanutils.BeanUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Date;
+
+/**
+ * **********************************************************
+ * 内容摘要	：<p>
+ * <p/>
+ * 作者	：94841
+ * 创建时间	：2016年4月20日 下午12:14:30
+ * 当前版本号：v1.0
+ * 历史记录	:
+ * 日期	: 2016年4月20日 下午12:14:30 	修改人：niuzan
+ * 描述	:
+ * **********************************************************
+ */
+@Service("RegisterService")
+public class RegisterServiceImpl implements RegisterService {
+    private final Logger log = LoggerFactory.getLogger(getClass());
+
+    @Autowired
+    UserBasicService userBasicService;
+
+    @Autowired
+    UserDetailService userDetailService;
+
+    @Autowired
+    OpenPlatformService openPlatformService;
+
+    @Autowired
+    MobileIndexService mobileIndexService;
+
+    @Autowired
+    EmailIndexService emailIndexService;
+
+    @Autowired
+    UserIdGenerator userIdGenerator;
+
+    @Autowired
+    UserRegisterExtraService userRegisterExtraService;
+    @Autowired
+    UserMapper userMapper;
+
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+
+    /**
+     * 函数名称 ：register
+     * 功能描述 ：
+     * 参数说明 ：
+     *
+     * @param
+     * @return 返回值：
+     * <p/>
+     * 修改记录：
+     * 日期 ：2016年4月20日 下午12:14:37	修改人：  niuzan
+     * 描述 ：
+     * @throws Exception
+     */
+    @Transactional
+    @Override
+    public UserBasicEntity register(String countryCode, String passport, String password, String gender,
+                                    String buId, String avatarUrl, String channelId, String clientId) throws Exception {
+        PassportType type = PassportType.validatePassport(countryCode, passport);
+
+        String userId = "";
+        if (PassportType.mobile == type) {
+            MobileIndexEntity entity = mobileIndexService.queryByMobile(countryCode, passport);
+            if (entity != null) {
+                log.error("该账号已存在，mobile=" + passport);
+                throw new BizException(ErrorCode.PASSPORT_EXIST.getCode(), ErrorCode.PASSPORT_EXIST.getMessage());
+            }
+            MobileIndexEntity indexEntity = mobileIndexService.insert(countryCode, passport);
+            userId = indexEntity.getUserId();
+            if (indexEntity == null || StringUtils.isBlank(userId)) {
+                log.error("索引表入库结果查询失败，mobile = " + passport + ", mobileIndexEntity=" + indexEntity == null ?
+                        null : JSONObject.toJSONString(indexEntity));
+                return null;
+            }
+        }
+        if (PassportType.email == type) {
+            EmailIndexEntity entity = emailIndexService.queryByEmail(passport);
+            if (entity != null) {
+                log.error("该账号已存在，mobile=" + passport);
+                throw new BizException(ErrorCode.PASSPORT_EXIST.getCode(), ErrorCode.PASSPORT_EXIST.getMessage());
+            }
+            EmailIndexEntity indexEntity = emailIndexService.insert(passport);
+            userId = indexEntity.getUserId();
+            if (indexEntity == null || StringUtils.isBlank(userId)) {
+                log.error("索引表入库结果查询失败，mobile = " + passport + ", emailIndexEntity=" + indexEntity == null ?
+                        null : JSONObject.toJSONString(indexEntity));
+                return null;
+            }
+        }
+
+        String salt = RandomStringUtil.generateSalt();
+        String userName = RandomStringUtil.generateName();
+        //String userName = mobile;
+        String encPassword = MD5Util.getMD5String(password + salt);
+        log.info("-x-:{}", encPassword);
+
+        if (StringUtils.isBlank(salt) || StringUtils.isBlank(userName) || StringUtils.isBlank(encPassword)) {
+            log.error("注册生成字段失败，salt=" + salt + ",userName=" + userName + ",encPassword=" + encPassword);
+            return null;
+        }
+        UserBasicEntity userBasicEntity = buildUserBasicEntity(userId, userName, countryCode, passport, encPassword, salt, buId);
+        //设置注册方式，用于判断后续绑定
+        userBasicEntity.setRegisterBy(type.name());
+        userBasicEntity.setClientId(clientId);
+
+        UserBasicEntity basicEntity = userBasicService.insert(userBasicEntity);
+
+        if (basicEntity == null) {
+            log.error("基本表中数据添加成功，但查询结果为空，userId = " + userId + ", mobile = " + passport);
+            return null;
+        }
+
+        //向详细表中添加数据
+        UserDetailEntity insertEntity = new UserDetailEntity(userId);
+        //注册接口接收头像和性别参数,头像直接入库，不做非空判断
+        insertEntity.setAvatar(avatarUrl);
+        if (StringUtils.isBlank(gender) || GenderEnum.getFromKey(gender) == null) {
+            insertEntity.setGender(GenderEnum.N.name());
+        } else {
+            insertEntity.setGender(GenderEnum.getFromKey(gender).name());
+        }
+        UserDetailEntity detailEntity = userDetailService.insert(insertEntity);
+        if (detailEntity == null) {
+            log.error("详细表中数据添加成功，但查询结果为空，userId = " + userId + ", mobile = " + passport);
+            return null;
+        }
+        //添加注册渠道
+        if (StringUtils.isNotBlank(channelId)) {
+            userRegisterExtraService.addRegisterExtra(userId, channelId);
+        }
+        return basicEntity;
+    }
+
+    @Transactional
+    @Override
+    public UserEntity register(RequestData requestData, PassportType type) throws Exception {
+        String redis_idx_key = null;//库表索引key
+        String redis_basic_key = null;//用户基本信息key
+        String passport = null;
+        String[] dbTblIdx = requestData.getDbTblIdx().split("-");
+        String dbName = dbTblIdx[0];
+        String tableName = dbTblIdx[1];
+        String seqId = dbTblIdx[2];
+        String userId = userIdGenerator.produceUserId();
+        String salt = RandomStringUtil.generateSalt();
+        String encPassword = MD5Util.getMD5String(requestData.getPassword() + salt);
+        UserEntity user = new UserEntity();
+        BeanUtils.copyProperties(user, requestData);
+        user.setUserName(StringUtils.isBlank(requestData.getUserName()) ? RandomStringUtil.generateName() : requestData.getUserName());
+        user.setAvatarUrl(StringUtils.isBlank(requestData.getAvatarUrl()) ? propertiesUtil.getString("default.avatar.url") : requestData.getAvatarUrl());//默认头像
+        user.setSalt(salt);
+        user.setUserId(userId);
+        user.setPassword(encPassword);
+        user.setCreateTime(new Date());
+        user.setStatus(UserCenterConstants.NORMAL);//默认用户装态-正常
+        user.setGender((StringUtils.isBlank(requestData.getGender()) || GenderEnum.getFromKey(requestData.getGender()) == null) ? GenderEnum.N.name() : GenderEnum.getFromKey(requestData.getGender()).name());
+        user.setRegisterBy(type.name());
+        if (requestData.getNeedCard() && StringUtils.isNotBlank(requestData.getCard())) {//v2注册+实名认证
+            user.setIdCardNo(requestData.getCard());
+            user.setIdCardName(requestData.getName());
+        }
+        boolean updatePassportCache = true;//手机号为100开头的不缓存
+        switch (type) {
+            case mobile: {
+                user.setMobile(StringUtils.isNotBlank(requestData.getMobile()) ? requestData.getMobile() : requestData.getPassport());
+                user.setCountryCode(StringUtils.isBlank(requestData.getCountryCode()) ? "86" : requestData.getCountryCode());
+                redis_idx_key = RedisContant.MOBILE_IDX;
+                passport = user.getMobile();
+                redis_basic_key = RedisContant.MOBILE_BASIC_IDX;
+                updatePassportCache = !passport.startsWith("100"); //手机号为100开头的不缓存
+                break;
+            }
+            case email: {
+                user.setEmail(StringUtils.isNotBlank(requestData.getEmail()) ? requestData.getEmail() : requestData.getPassport());
+                redis_idx_key = RedisContant.EMAIL_IDX;
+                passport = user.getEmail();
+                redis_basic_key = RedisContant.EMAIL_BASIC_IDX;
+                break;
+            }
+            case imsi: {
+                redis_idx_key = RedisContant.IMSI_DB_IDX;
+                passport = requestData.getImsi();
+                redis_basic_key = RedisContant.IMSI_BAISC_IDX;
+                break;
+            }
+        }
+        if (!userMapper.updateUserById(tableName, seqId, user)) {
+            log.error("账户注册失败，用户信息：{}", JSONObject.toJSONString(user));
+            throw new BizException("注册失败，请稍后重试");
+        }
+        handleThirdAccount(requestData, user); //第三方账户处理
+        if (updatePassportCache) {
+            if (StringUtils.isNotBlank(RedisUtil.hget(redis_idx_key, passport))) //判断账户是否存在
+                throw new BizException(ErrorCode.PASSPORT_EXIST.getCode(),ErrorCode.PASSPORT_EXIST.getMessage());
+            RedisUtil.hset(redis_idx_key, passport, requestData.getDbTblIdx());
+            RedisUtil.hset(redis_basic_key, passport, JSONObject.toJSONString(user));
+        }
+        RedisUtil.hset(RedisContant.USER_BASIC_IDX, user.getUserId(), JSONObject.toJSONString(user));
+        return user;
+    }
+
+    /**
+     * 第三方账户处理
+     *
+     * @param requestData
+     * @param user
+     */
+    private void handleThirdAccount(RequestData requestData, UserEntity user) {
+        ThirdPartyEnum thirdPartyEnum;//第三方账户
+        if (StringUtils.isNotBlank(user.getThirdId()) && StringUtils.isNotBlank(user.getOpenId()) &&
+                null != (thirdPartyEnum = ThirdPartyEnum.getFromKey(user.getThirdId()))
+                && thirdPartyEnum != ThirdPartyEnum.TOURIST) {
+            if (StringUtils.isNotBlank(RedisUtil.hget(thirdPartyEnum.getDbIdxKey(), user.getOpenId())))//判断账户是否存在
+                throw new BizException(ErrorCode.PASSPORT_EXIST.getCode());
+            RedisUtil.hset(thirdPartyEnum.getDbIdxKey(), user.getOpenId(), requestData.getDbTblIdx());
+            RedisUtil.hset(thirdPartyEnum.getOpenIdUserKey(), user.getOpenId(), JSONObject.toJSONString(user));
+        }
+    }
+
+
+    /**
+     * 函数名称 ：register4OpenPlatform
+     * 功能描述 ：
+     * 参数说明 ：
+     *
+     * @param passport
+     * @param password
+     * @return
+     * @throws Exception 返回值：
+     *                   <p/>
+     *                   修改记录：
+     *                   日期 ：2016年5月9日 下午4:39:55	修改人：
+     *                   描述 ：
+     */
+    @Override
+    public OpenPlatformBasicEntity register4OpenPlatform(String passport, String password) throws Exception {
+        PassportType passportType = PassportType.validatePassport(null, passport);
+        OpenPlatformBasicEntity entity = null;
+        if (PassportType.mobile == passportType) {
+            entity = openPlatformService.queryByMobile(passport);
+        } else if (PassportType.email == passportType) {
+            entity = openPlatformService.queryByEmail(passport);
+        }
+        if (entity != null) {
+            log.error(ErrorCode.PASSPORT_EXIST.getMessage());
+            throw new BizException(ErrorCode.PASSPORT_EXIST.getCode());
+        }
+        //因为有导入数据，可能出现主键重复。
+        String userId = null;
+        try {
+            userId = userIdGenerator.generateOpenUserId();
+        } catch (Exception e) {
+            log.error(e + "生成用户id失败,请检查序列表数据！");
+            throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+        }
+        if (StringUtils.isBlank(userId)) {
+            log.error("生成用户id为空！");
+            throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+        }
+        while (openPlatformService.queryById(userId) != null) {
+            userId = userIdGenerator.generateOpenUserId();
+        }
+        String salt = RandomStringUtil.generateSalt();
+        String userName = RandomStringUtil.generateName();
+        //String userName = passport;
+        String encPassword = MD5Util.getMD5String(password + salt);
+        OpenPlatformBasicEntity basicEntity = buildOpenPlatformUserEntity(userId, userName, passport, encPassword, salt);
+        return openPlatformService.insert(basicEntity);
+    }
+
+
+    /**
+     * 函数名称 : buildEntity
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param userId      TODO
+     * @param userName    TODO
+     * @param countryCode TODO
+     * @param passport
+     * @param password
+     * @param salt
+     * @return 修改记录：
+     * 日期 ：2016年4月13日 下午5:31:43	修改人：  niuzan
+     * 描述	：
+     */
+    private UserBasicEntity buildUserBasicEntity(String userId, String userName, String countryCode, String passport, String password, String salt, String buId) {
+        return CommonUtil.buildUserBasicEntity(userId, userName, countryCode, passport, password, UserCenterConstants.NORMAL, salt, buId);
+    }
+
+    /**
+     * 函数名称 : buildOpenPlatformUserEntity
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param userId
+     * @param userName
+     * @param passport
+     * @param password
+     * @param salt
+     * @return 修改记录：
+     * 日期 ：2016年5月19日 下午5:40:03	修改人：
+     * 描述	：
+     */
+    private OpenPlatformBasicEntity buildOpenPlatformUserEntity(String userId, String userName, String passport, String password, String salt) {
+        return CommonUtil.buildOpenPlatformUserBasicEntity(userId, userName, passport, password, UserCenterConstants.NORMAL, salt);
+    }
+}

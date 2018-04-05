@@ -1,0 +1,15 @@
+#\u67E5\u8BE2\u7528\u6237\u89D2\u8272\u63A5\u53E3\u5730\u5740
+common.user.url.role=http://user.qbao.com/api/get/userRole/{username}/new
+#\u67E5\u8BE2\u7528\u6237\u4FE1\u606F\u63A5\u53E3\u5730\u5740
+common.user.url.info=http://user.qbao.com/api/user/{username}/get
+#\u67E5\u8BE2\u7528\u6237\u597D\u53CB\u5217\u8868
+common.user.friend=http://user.qbao.com/api/getFriends
+#cc\u89C6\u9891\u5730\u5740
+common.cc.videoUrl=http://spark.bokecc.com/api/video/playcode
+//common.qrcode.redirect=http://www.qbcdn.com/store/install/
+common.qrcode.redirect=http://store.qbao.com/wap/qrcode/scan
+qrcode.liantu.url=http://qr.liantu.com/api.php?text=
+#ccvideo
+common.video.siteId=87ACA21FD20C9C52
+#downloadSwitch 0=close valid 1=open valid 
+download.switch=1

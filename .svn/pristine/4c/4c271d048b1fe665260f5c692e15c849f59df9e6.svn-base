@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.user.UserBasicMapper" >
+  <resultMap id="BaseResultMap" type="com.qbao.store.entity.user.UserBasicEntity" >
+    <id column="user_id" property="userId" jdbcType="VARCHAR" />
+   	<result column="open_id" property="openId" jdbcType="VARCHAR" />
+   	<result column="country_code" property="countryCode" jdbcType="VARCHAR" />
+    <result column="mobile" property="mobile" jdbcType="VARCHAR" />
+    <result column="email" property="email" jdbcType="VARCHAR" />
+    <result column="user_name" property="userName" jdbcType="VARCHAR" />
+    <result column="email_status" property="emailStatus" jdbcType="VARCHAR" />
+    <result column="password" property="password" jdbcType="VARCHAR" />
+    <result column="salt" property="salt" jdbcType="VARCHAR" />
+    <result column="status" property="status" jdbcType="INTEGER" />
+    <result column="bu_id" property="buId" jdbcType="VARCHAR" />
+    <result column="create_time" property="createTime" jdbcType="DATE" />
+    <result column="update_time" property="updateTime" jdbcType="DATE" />
+  </resultMap>
+  <sql id="base_column_list" >
+    user_id, open_id, country_code, mobile, email, user_name, email_status, password, salt, status, bu_id, create_time, update_time
+  </sql>
+  
+  <!-- 查询用户基本信息 -->
+  <select id="queryById" resultMap="BaseResultMap" parameterType="java.lang.String" >
+    select 
+    <include refid="base_column_list" />
+    from ${tableName}
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </select>
+  
+  <!-- 假删除，更新用户状态0：正常，1：注销，2：禁用 -->
+  <update id="deleteById" parameterType="java.lang.String" >
+    update ${tableName} set status = 1 and update_time = now()
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </update>
+  
+  <!-- 添加用户 -->
+  <insert id="insert" parameterType="com.qbao.store.entity.user.UserBasicEntity" >
+    insert into ${tableName}
+    <trim prefix="(" suffix=")" suffixOverrides="," >
+      <if test="userEntity.userId != null and userEntity.userId != ''" >
+        user_id,
+      </if>
+      <if test="userEntity.openId != null and userEntity.openId != ''" >
+        open_id,
+      </if>
+      <if test="userEntity.countryCode != null and userEntity.countryCode != ''" >
+        country_code,
+      </if>
+      <if test="userEntity.mobile != null and userEntity.mobile != ''" >
+        mobile,
+      </if>
+      <if test="userEntity.email !=null and userEntity.email != ''">
+      	email,
+      </if>
+      <if test="userEntity.userName !=null and userEntity.userName != ''">
+      	user_name,
+      </if>
+      <if test="userEntity.emailStatus !=null and userEntity.emailStatus != ''">
+      	email_status,
+      </if>
+      <if test="userEntity.password !=null and userEntity.password != ''">
+      	password,
+      </if>
+      <if test="userEntity.salt != null and userEntity.salt != ''" >
+        salt,
+      </if>
+      <if test="userEntity.buId != null and userEntity.buId != ''" >
+        bu_id,
+      </if>
+        create_time
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides="," >
+      <if test="userEntity.userId != null and userEntity.userId != ''" >
+        #{userEntity.userId,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.openId != null and userEntity.openId != ''" >
+        #{userEntity.openId,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.countryCode != null and userEntity.countryCode != ''" >
+        #{userEntity.countryCode,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.mobile != null and userEntity.mobile != ''" >
+        #{userEntity.mobile,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.email !=null and userEntity.email != ''">
+      	#{userEntity.email,jdbcType=VARCHAR},
+      </if>
+       <if test="userEntity.userName !=null and userEntity.userName != ''">
+      	#{userEntity.userName,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.emailStatus !=null and userEntity.emailStatus != ''">
+      	#{userEntity.emailStatus,jdbcType=INTEGER},
+      </if>
+      <if test="userEntity.password !=null and userEntity.password != ''">
+      	#{userEntity.password,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.salt != null and userEntity.salt != ''" >
+        #{userEntity.salt,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.buId != null and userEntity.buId != ''" >
+        #{userEntity.buId,jdbcType=VARCHAR},
+      </if>
+        now()
+    </trim>
+  </insert>
+  
+  	<!-- 更新用户手机 -->
+  <update id="updateMobile" >
+    update ${tableName}
+    <set >
+    	country_code = #{countryCode, jdbcType=VARCHAR},
+        mobile = #{mobile,jdbcType=VARCHAR},
+        update_time = now()
+    </set>
+    where user_id = #{userId,jdbcType=VARCHAR}
+  </update>
+  
+	<!--   更新用户 -->
+  <update id="update" parameterType="com.qbao.store.entity.user.UserBasicEntity" >
+    update ${tableName}
+    <set >
+      <if test="userEntity.openId != null and userEntity.openId != ''" >
+        open_id = #{userEntity.openId,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.countryCode != null and userEntity.countryCode != ''" >
+        country_code = #{userEntity.countryCode,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.mobile != null and userEntity.mobile != ''" >
+        mobile = #{userEntity.mobile,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.email !=null and userEntity.email != ''">
+      	email = #{userEntity.email,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.userName !=null and userEntity.userName != ''">
+      	user_name = #{userEntity.userName,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.emailStatus !=null and userEntity.emailStatus != ''">
+      	emai_status = #{userEntity.emailStatus,jdbcType=INTEGER},
+      </if>
+      <if test="userEntity.password !=null and userEntity.password != ''">
+      	password = #{userEntity.password,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.salt != null and userEntity.salt != ''" >
+        salt = #{userEntity.salt,jdbcType=VARCHAR},
+      </if>
+      <if test="userEntity.status != null and userEntity.status != ''" >
+        status = #{userEntity.status,jdbcType=INTEGER},
+      </if>
+        update_time = now()
+    </set>
+    where user_id = #{userEntity.userId,jdbcType=VARCHAR}
+  </update>
+</mapper>

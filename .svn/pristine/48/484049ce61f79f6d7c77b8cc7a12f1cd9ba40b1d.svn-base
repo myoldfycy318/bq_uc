@@ -1,0 +1,331 @@
+package com.qbao.store.controller.v2;
+
+import java.text.SimpleDateFormat;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MailUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.index.EmailIndexEntity;
+import com.qbao.store.entity.index.MobileIndexEntity;
+import com.qbao.store.entity.user.UserAllInOne;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserDetailEntity;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.UserDetailService;
+import com.qbao.store.service.index.EmailIndexService;
+import com.qbao.store.service.index.MobileIndexService;
+import com.qbao.store.service.risk.RiskService;
+import com.qbao.store.util.MD5Util;
+import com.qbao.store.util.TokenUtil;
+import com.qbao.store.util.UserCenterContext;
+
+/**
+ * 修改用户信息
+ *
+ * @author hunsy
+ */
+@RequestMapping("v2/user")
+@Controller
+public class V2UserController extends IBaseController {
+
+
+    @Autowired
+    private UserBasicService userBasicService;
+    @Autowired
+    private UserDetailService userDetailService;
+    @Autowired
+    private MobileIndexService mobileIndexService;
+    @Autowired
+    private EmailIndexService emailIndexService;
+    @Autowired
+    private RiskService riskService;
+
+    /**
+     * 登录
+     *
+     * @return
+     */
+    @RequestMapping(value = "login", method = RequestMethod.POST)
+    @ResponseBody
+    public String login(@RequestParam(defaultValue = "86") String countryCode,
+                        String passport, String password, String clientId, String buId,
+                        String captcha, String captchaKey) {
+        try {
+            BUEnum bu = validateBuId(buId);
+            // 请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && bu != BUEnum.DOME_SDK) {
+                clientId = buId;
+            }
+            validateClientId(clientId);
+            PassportType type = validatePassport(countryCode, passport);
+            //验证解密
+            validatePassword(password, isAESContent(BUEnum.getFromKey(buId)));
+
+            UserBasicEntity userBasicEntity = null;
+            //手机号码
+            if (type == PassportType.mobile) {
+                MobileIndexEntity mie = mobileIndexService.queryByMobile(countryCode, passport);
+                if (mie == null) {
+                    logger.error("手机账户不存在->mobile:{}", passport);
+                    throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode());
+                }
+                userBasicEntity = userBasicService.queryById(mie.getUserId());
+            }
+
+            if (type == PassportType.email) {
+                EmailIndexEntity eie = emailIndexService.queryByEmail(passport);
+                if (eie == null) {
+                    logger.error("邮箱账户不存在->email:{}", passport);
+                    throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode());
+                }
+                userBasicEntity = userBasicService.queryById(eie.getUserId());
+            }
+
+            if (userBasicEntity == null) {
+                logger.error("账户基本信息不存在->passport:{}", passport);
+                throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode());
+            }
+            UserCenterContext.buildUserBasicInfo2LogEntity(userBasicEntity);
+            logger.info("登录返回实体->entity:{}", JSONObject.toJSONString(userBasicEntity));
+            String tmp = MD5Util.getMD5String(password + userBasicEntity.getSalt());
+            logger.info("temp:{}", tmp);
+            //密码不正确
+            if (!tmp.equals(userBasicEntity.getPassword())) {
+
+                logger.error("密码错误");
+                throw new BizException(ErrorCode.PASSWORD_WRONG.getCode());
+            }
+
+
+            String accessToken = cacheToken(clientId, userBasicEntity.getUserId(), userBasicEntity.getSalt());
+            riskService.clearRisk();
+            Map<String, String> ret = new HashMap<String, String>();
+            ret.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            ret.put(UserCenterConstants.USER_ID, userBasicEntity.getUserId());
+            return JSONObject.toJSONString(BaseResponse.success(ret));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+
+    /**
+     * 获取用户的详情 基本信息，详情，认证信息
+     *
+     * @return
+     */
+    @RequestMapping(
+            value = "/getByToken",
+            method = RequestMethod.POST)
+    @ResponseBody
+    public String getUserInfo(String accessToken, String clientId, String buId) {
+
+        try {
+            BUEnum buEnum = validateBuId(buId);
+            // 请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            accessToken = TokenUtil.validateToken(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+
+            UserAllInOne userAllInOne = userBasicService.queryAllInfoById(userId);
+
+            if (userAllInOne == null) {
+                logger.error("用户不存在");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            String str = JSONObject.toJSONString(BaseResponse.success(userAllInOne), SerializerFeature.WriteNullStringAsEmpty);
+            logger.info("resp:{}", str);
+            System.out.println(str);
+            return str;
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 修改用户信息
+     *
+     * @return
+     */
+    @RequestMapping(value = "modify", method = RequestMethod.POST)
+    @ResponseBody
+    public String modify(
+            String accessToken, String clientId, String buId,
+            String userName, String gender, String birthday, int age,
+            String province, String city, String addressDetail, String qqNo) {
+
+        try {
+            BUEnum buEnum = validateBuId(buId);
+            // 请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            accessToken = TokenUtil.validateToken(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+
+            // 获取用户的基本信息
+            UserBasicEntity userBasic = userBasicService.queryById(userId);
+            if (userBasic == null) {
+                logger.error("用户基本信息不存在,修改用户信息失败!");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            logger.info("查询所得用户基本信息userBasic,{}", JSONObject.toJSONString(userBasic));
+
+            TokenUtil.validateTokenSign(accessToken, userBasic.getSalt());
+            // 更新用户基本信息中的昵称
+            UserBasicEntity basicEntity = new UserBasicEntity();
+            basicEntity.setUserId(userBasic.getUserId());
+            basicEntity.setUserName(userName);
+            userBasicService.update(basicEntity);
+            //更新详情
+            UserDetailEntity userDetail = userDetailService.queryById(userId);
+            if (userDetail == null) {
+                logger.error("用户详细信息不存在,数据可能存在不一致！");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            userDetail.setGender(gender);
+            if(StringUtils.isNotEmpty(birthday)){
+            	userDetail.setBirthday(new SimpleDateFormat("yyyy-MM-dd").parse(birthday));
+            }
+            userDetail.setAge(age);
+            userDetail.setProvince(province);
+            userDetail.setCity(city);
+            userDetail.setAddressDetail(addressDetail);
+            userDetail.setQqNo(qqNo);
+            userDetailService.update(userDetail);
+
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 绑定账号
+     *
+     * @return
+     */
+    @RequestMapping(value = "bind", method = RequestMethod.POST)
+    @ResponseBody
+    public String bind(
+            @RequestParam(defaultValue = "86") String countryCode,
+            String accessToken,
+            String passport,
+            String verifyCode,
+            String smsToken,
+            Boolean isChange,
+            String clientId,
+            String buId) {
+        try {
+            BUEnum buEnum = validateBuId(buId);
+            if (StringUtils.isBlank(clientId) && buEnum != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            accessToken = TokenUtil.validateToken(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            PassportType type = validatePassport(countryCode, passport);
+            // 获取用户的基本信息
+            UserBasicEntity userBasic = userBasicService.queryById(userId);
+            if (userBasic == null) {
+                logger.error("用户基本信息不存在,修改用户信息失败!");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            logger.info("查询所得用户基本信息userBasic,{}", JSONObject.toJSONString(userBasic));
+            if (type == PassportType.mobile) {
+                //验证smsToken
+                if (isChange) {
+                    SMSUtils.validateSmsToken(userBasic.getMobile(), smsToken, clientId, BizType.changeBind.name());
+                }
+                SMSUtils.verifySmsCode(countryCode, passport, verifyCode, clientId, BizType.bind.name());
+                MobileIndexEntity index = mobileIndexService.queryByMobile(countryCode, passport);
+                if (index != null) {
+                    logger.error("绑定账号已存在");
+                    throw new BizException(ErrorCode.BIND_PASSPORT_EXIST.getCode());
+                }
+            } else {
+                if (isChange) {
+                    MailUtil.validateEmailToken(userBasic.getEmail(), smsToken, clientId, BizType.changeBind.name());
+                }
+                MailUtil.verifyCode(passport, clientId, BizType.bind.name(), verifyCode);
+                EmailIndexEntity index = emailIndexService.queryByEmail(passport);
+                if (index != null) {
+                    logger.error("绑定账号已存在");
+                    throw new BizException(ErrorCode.BIND_PASSPORT_EXIST.getCode());
+                }
+            }
+
+            TokenUtil.validateTokenSign(accessToken, userBasic.getSalt());
+
+            if (userBasic.getRegisterBy().equals(type.name())) {
+                logger.error("不能绑定相同类型的账号");
+                throw new BizException(ErrorCode.BIND_SAME_TYPE.getCode());
+            }
+            // 更新用户基本信息中的手机号码/邮箱
+//			UserBasicEntity basicEntity = new UserBasicEntity();
+            if (type == PassportType.mobile) {
+                userBasic.setCountryCode(countryCode);
+                
+                //新增绑定账号的索引
+                if (!isChange) {
+                    mobileIndexService.insertWithUserId(countryCode, passport, userId);
+                } else {
+                    mobileIndexService.delete(userBasic.getMobile(), userId);
+                    mobileIndexService.insertWithUserId(countryCode, passport, userId);
+                }
+                userBasic.setMobile(passport);
+            }
+
+            if (type == PassportType.email) {
+                userBasic.setEmail(passport);
+                //新增绑定账号的索引
+                if (!isChange) {
+                    emailIndexService.insertWithUserId(passport, userId);
+                } else {
+                    emailIndexService.updateEmail(userId, passport);
+                }
+
+            }
+            //更新
+            userBasicService.update(userBasic);
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    public static void main(String[] args) {
+
+        System.out.println(JSONObject.toJSONString(new UserAllInOne(), SerializerFeature.WriteNullStringAsEmpty));
+    }
+
+}

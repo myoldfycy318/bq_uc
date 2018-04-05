@@ -1,0 +1,98 @@
+package com.qbao.store.service.impl;
+
+import java.util.List;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.alibaba.fastjson.JSONObject;
+import com.qbao.store.entity.user.UserAllInOne;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.helper.ShardHelper;
+import com.qbao.store.mapper.user.UserBasicMapper;
+import com.qbao.store.service.UserBasicService;
+
+@Service("userBasicService")
+public class UserBasicServiceImpl implements UserBasicService
+{
+	private final Logger log = LoggerFactory.getLogger(getClass());
+    @Autowired
+    private UserBasicMapper userBasicMapper;
+
+	@Override
+	public void deleteById(String userId) 
+	{
+		userBasicMapper.deleteById(userId, userId);
+	}
+
+	@Override
+	public List<UserBasicEntity> queryAllWithPagination(Integer pageNum, Integer eachPageCount) 
+	{
+		return null;
+	}
+
+	@Override
+	public UserBasicEntity insert(UserBasicEntity userBasicEntity) throws Exception 
+	{
+		if(userBasicEntity == null || StringUtils.isBlank(userBasicEntity.getUserId()))
+		{
+			log.error("数据异常，userBasicEntity=" + JSONObject.toJSONString(userBasicEntity));
+			return null;
+		}
+		String tableName = ShardHelper.getUserBasicTableName(userBasicEntity.getUserId());
+		if(StringUtils.isBlank(tableName))
+		{
+			log.error("分表信息获取失败，userId=" + userBasicEntity.getUserId());
+			return null;
+		}
+		int result = userBasicMapper.insert(userBasicEntity, tableName);
+		if(result != 1)
+		{
+			log.error("入库失败，userBasicEntity=" + userBasicEntity);
+			return null;
+		}
+		else
+		{
+			return userBasicMapper.queryById(userBasicEntity.getUserId(), tableName);
+		}
+	}
+
+	@Override
+	public int updateMobile(String userId, String mobile) throws Exception
+	{
+		String tableName = ShardHelper.getUserBasicTableName(userId);
+		return userBasicMapper.updateMobile(userId, mobile, tableName);
+	}
+	
+	@Override
+	public int update(UserBasicEntity userEntity) throws Exception
+	{
+		String tableName = ShardHelper.getUserBasicTableName(userEntity.getUserId());
+		return userBasicMapper.update(userEntity, tableName);
+	}
+
+	@Override
+	public UserBasicEntity queryById(String userId)
+	{
+		String tableName = ShardHelper.getUserBasicTableName(userId);
+		if(StringUtils.isBlank(tableName))
+		{
+			log.error("分表信息获取失败，userId=" + userId);
+			return null;
+		}
+		log.info("分表结果为tableName=" + tableName);
+		return userBasicMapper.queryById(userId, tableName);
+	}
+	
+	
+	@Override
+	public UserAllInOne queryAllInfoById(String userId) {
+
+		UserAllInOne map = userBasicMapper.queryAllInfo(userId,userId.substring(userId.length() - 2));
+		return map;
+	}
+
+}

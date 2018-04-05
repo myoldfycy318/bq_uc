@@ -1,0 +1,247 @@
+package com.bqiong.usercenter.util;
+
+import java.io.UnsupportedEncodingException;
+import java.util.Properties;
+
+import javax.mail.Authenticator;
+import javax.mail.Message.RecipientType;
+import javax.mail.MessagingException;
+import javax.mail.PasswordAuthentication;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
+import javax.mail.internet.MimeUtility;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.bqiong.usercenter.constants.EmailCodeTextEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.TraditionChineseEmailCodeTextEnum;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+
+/**
+ * ********************************************************** 内容摘要 ：
+ * <p>
+ *
+ * 作者 ：94841 创建时间 ：2016年5月11日 下午3:49:39 当前版本号：v1.0 历史记录 : 日期 : 2016年5月11日
+ * 下午3:49:39 修改人： 描述 :
+ ***********************************************************
+ */
+public class MailUtil {
+
+	private static final Logger log = LoggerFactory.getLogger(MailUtil.class);
+
+	/**
+	 * auth开关
+	 */
+	private static String auth;
+
+	/**
+	 * 邮件服务器
+	 */
+	private static String host;
+
+	/**
+	 * 发送人
+	 */
+	private static String user;
+
+	/**
+	 * 发送人密码
+	 */
+	private static String password;
+
+	/**
+	 * 
+	 * @param reciver
+	 *            邮箱地址
+	 * @param clientId
+	 *            客户端id
+	 * @param bizType
+	 *            业务类型
+	 * @param isInland
+	 *            是否为国内邮箱 true 国内 false 海外
+	 */
+	public static void sendMail(String reciver, String clientId,
+			String bizType, boolean isInland) {
+		try {
+			log.info("isInland:{}", isInland);
+			// 配置发送邮件的环境属性
+			final Properties props = new Properties();
+			
+			String emailOneMinKey = UserCenterConstants.REDIS_EMAIL_CODE_KEY_PREFIX + clientId + ":" + bizType + ":" + reciver+":min";
+			String emailCodeKey = UserCenterConstants.REDIS_EMAIL_CODE_KEY_PREFIX + clientId + ":" + bizType + ":" + reciver;
+			
+			if (StringUtils.isNotBlank(RedisUtil.get(emailOneMinKey))) {
+				log.error("一分钟内已经发送过邮箱验证码！");
+				// 一分钟内已经发送过
+				throw new BizException(ErrorCode.SEND_EMAIL_CODE_ONCE_MIN.getCode());
+			}
+			/*
+			 * 可用的属性： mail.store.protocol / mail.transport.protocol / mail.host
+			 * / mail.user / mail.from
+			 */
+			// 表示SMTP发送邮件，需要进行身份验证
+			props.put(UserCenterConstants.EMAIL_AUTH, auth);
+
+			props.put(UserCenterConstants.EMAIL_HOST, host);
+			// 发件人的账号
+			props.put(UserCenterConstants.EMAIL_USER, user);
+			// 访问SMTP服务时需要提供的密码
+			props.put(UserCenterConstants.EMAIL_PASSWORD, password);
+
+			// 构建授权信息，用于进行SMTP进行身份验证
+			Authenticator authenticator = new Authenticator() {
+				@Override
+				protected PasswordAuthentication getPasswordAuthentication() {
+					// 用户名、密码
+					String userName = props
+							.getProperty(UserCenterConstants.EMAIL_USER);
+					String password = props
+							.getProperty(UserCenterConstants.EMAIL_PASSWORD);
+					return new PasswordAuthentication(userName, password);
+				}
+			};
+			// 使用环境属性和授权信息，创建邮件会话
+			Session mailSession = Session.getInstance(props, authenticator);
+			// 创建邮件消息
+			MimeMessage message = new MimeMessage(mailSession);
+			// 设置发件人
+			InternetAddress form = new InternetAddress(props.getProperty(UserCenterConstants.EMAIL_USER));
+			message.setFrom(form);
+
+			// 设置收件人
+			InternetAddress to = new InternetAddress(reciver);
+			message.setRecipient(RecipientType.TO, to);
+			String code = RandomStringUtil.generateCode(UserCenterConstants.EMAIL_CODE_LENGTH);
+			log.info("生成邮件验证码->邮箱地址：{},验证码:{}", reciver, code);
+			RedisUtil.set(emailCodeKey, code, UserCenterConstants.EMAIL_CODE_EXPIRE_TIME);
+			RedisUtil.set(emailOneMinKey, code, 60);
+
+			if (isInland) {
+				// 设置邮件标题
+				message.setSubject(MimeUtility.encodeText("冰穹开放平台验证码", "UTF-8","B"));
+				String emailCodeText = EmailCodeTextEnum.getFromKey(bizType).getText();
+				// 设置邮件的内容体
+				message.setContent(String.format(emailCodeText, code),"text/html;charset=UTF-8");
+			} else {
+				// 设置邮件标题
+				message.setSubject(MimeUtility.encodeText("冰穹開放平臺驗證碼", "UTF-8","B"));
+				String emailCodeText = TraditionChineseEmailCodeTextEnum.getFromKey(bizType).getText();
+				// 设置邮件的内容体
+				message.setContent(String.format(emailCodeText, code),
+						"text/html;charset=UTF-8");
+			}
+			// 发送邮件
+			Transport.send(message);
+			log.info("下发邮件验证码->邮箱地址：{},验证码:{},海内邮箱:{}", reciver, code, isInland);
+		} catch (MessagingException e) {
+			log.error("向邮箱->{}->下发邮件验证码失败!", reciver, e);
+		} catch (UnsupportedEncodingException e) {
+			log.error("向邮箱->{}->下发邮件验证码失败!", reciver, e);
+			e.printStackTrace();
+		}
+	}
+
+	/**
+	 * 
+	 * 函数名称 : verifyCode 功能描述 : 参数及返回值说明：
+	 * 
+	 * @param reciver
+	 * @param clientId
+	 * @param bizType
+	 * @param emailCode
+	 *
+	 *            修改记录： 日期 ：2016年5月12日 下午2:49:36 修改人： 描述 ：
+	 *
+	 */
+	public static void verifyCode(String reciver, String clientId,String bizType, String emailCode) {
+		if (StringUtils.isBlank(emailCode)) {
+			log.error("参数emailCode为空");
+			throw new BizException(ErrorCode.VERIFY_CODE_NULL.getCode());
+		}
+		String emailCodeKey = UserCenterConstants.REDIS_EMAIL_CODE_KEY_PREFIX + clientId + ":" + bizType + ":" + reciver;
+		if (StringUtils.isBlank(RedisUtil.get(emailCodeKey))
+				|| !emailCode.equals(RedisUtil.get(emailCodeKey))) {
+			log.info("邮箱验证码错误" + ",email=" + reciver + ",clientId=" + clientId
+					+ ",bizType=" + bizType + ",emailCode=" + emailCode);
+			throw new BizException(ErrorCode.VERIFY_CODE_ERROR.getCode());
+		}
+	}
+
+	/**
+	 * 
+	 * 函数名称 : cacheSmsToken 功能描述 : 参数及返回值说明：
+	 * 
+	 * @param mobile
+	 * @param clientId
+	 * @param bizType
+	 * @return
+	 *
+	 *         修改记录： 日期 ：2016年5月12日 下午2:49:40 修改人： 描述 ：
+	 *
+	 */
+	public static String cacheEmailToken(String email, String clientId,
+			String bizType) {
+		String emailToken = RandomStringUtil.generateVerifyToken();
+		String emailTokenKey = UserCenterConstants.REIDS_EMAIL_TOKEN_KEY_PREFIX
+				+ clientId + ":" + bizType + ":" + email;
+		RedisUtil.set(emailTokenKey, emailToken,
+				UserCenterConstants.SMS_EMAIL_TOKEN_TIME);
+		log.info("生成emailToken,emailToken=" + emailToken);
+		return emailToken;
+	}
+
+	public static void validateEmailToken(String email, String emailToken,String clientId, String bizType) {
+		if (StringUtils.isBlank(emailToken)) {
+			log.error("emailToken为空！email=" + email + ",clientId= " + clientId + ",bizType=" + bizType);
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		String emailTokenKey = UserCenterConstants.REIDS_EMAIL_TOKEN_KEY_PREFIX + clientId + ":" + bizType + ":" + email;
+		if (!RedisUtil.exists(emailTokenKey)) {
+			log.info("emailToken已过期！" + "email=" + email + ",emailToken="+ emailToken);
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+		if (!emailToken.equals(RedisUtil.get(emailTokenKey))) {
+			log.error("emailToken错误" + ",email=" + email + ",emailToken="+ emailToken);
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}
+	}
+
+	public static String getAuth() {
+		return auth;
+	}
+
+	public static void setAuth(String auth) {
+		MailUtil.auth = auth;
+	}
+
+	public static String getHost() {
+		return host;
+	}
+
+	public static void setHost(String host) {
+		MailUtil.host = host;
+	}
+
+	public static String getUser() {
+		return user;
+	}
+
+	public static void setUser(String user) {
+		MailUtil.user = user;
+	}
+
+	public static String getPassword() {
+		return password;
+	}
+
+	public static void setPassword(String password) {
+		MailUtil.password = password;
+	}
+
+}

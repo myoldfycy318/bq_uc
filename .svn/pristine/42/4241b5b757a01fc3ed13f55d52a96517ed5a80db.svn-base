@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.user.UserMapper">
+
+    <sql id="base_column_list">
+        id,user_id,user_name,country_code,mobile,password,email,email_status,status,
+        salt,bu_id,register_by,client_id,age,gender,avatar,birthday,address_detail,
+        create_time,update_time,id_card_no,id_card_name,open_id,third_id,qq_no
+    </sql>
+
+    <resultMap id="BaseResultMap" type="com.qbao.store.entity.user.UserEntity">
+        <id column="id" property="id" jdbcType="VARCHAR"/>
+        <result column="user_id" property="userId" jdbcType="VARCHAR"/>
+        <result column="user_name" property="userName" jdbcType="VARCHAR"/>
+        <result column="country_code" property="countryCode" jdbcType="VARCHAR"/>
+        <result column="mobile" property="mobile" jdbcType="VARCHAR"/>
+        <result column="password" property="password" jdbcType="VARCHAR"/>
+        <result column="email" property="email" jdbcType="VARCHAR"/>
+        <result column="email_status" property="emailStatus" jdbcType="VARCHAR"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="salt" property="salt" jdbcType="VARCHAR"/>
+        <result column="bu_id" property="buId" jdbcType="VARCHAR"/>
+        <result column="register_by" property="registerBy" jdbcType="VARCHAR"/>
+        <result column="client_id" property="clientId" jdbcType="VARCHAR"/>
+        <result column="age" property="age" jdbcType="VARCHAR"/>
+        <result column="gender" property="gender" jdbcType="VARCHAR"/>
+        <result column="avatar" property="avatarUrl" jdbcType="VARCHAR"/>
+        <result column="birthday" property="birthday" jdbcType="VARCHAR"/>
+        <result column="address_detail" property="addressDetail" jdbcType="VARCHAR"/>
+        <result column="create_time" property="createTime" jdbcType="VARCHAR"/>
+        <result column="update_time" property="updateTime" jdbcType="VARCHAR"/>
+        <result column="id_card_no" property="idCardNo" jdbcType="VARCHAR"/>
+        <result column="id_card_name" property="idCardName" jdbcType="VARCHAR"/>
+        <result column="open_id" property="openId" jdbcType="VARCHAR"/>
+        <result column="third_id" property="thirdId" jdbcType="VARCHAR"/>
+        <result column="qq_no" property="qqNo" jdbcType="VARCHAR"/>
+    </resultMap>
+
+
+    <update id="updateUserById" parameterType="com.qbao.store.entity.user.UserEntity">
+        update ${tableName} set update_time=now()
+        <if test="user.userId!=null and user.userId!=''">
+            ,user_id=#{user.userId,jdbcType=VARCHAR}
+        </if>
+        <if test="user.userName!=null and user.userName!=''">
+            ,user_name=#{user.userName,jdbcType=VARCHAR}
+        </if>
+        <if test="user.countryCode!=null and user.countryCode!='86'">
+            ,country_code=#{user.countryCode,jdbcType=VARCHAR}
+        </if>
+        <if test="user.mobile!=null and user.mobile!=''">
+            ,mobile=#{user.mobile,jdbcType=VARCHAR}
+        </if>
+        <if test="user.password!=null and user.password!=''">
+            ,password=#{user.password,jdbcType=VARCHAR}
+        </if>
+        <if test="user.email!=null and user.email!=''">
+            ,email=#{user.email,jdbcType=VARCHAR}
+        </if>
+        <if test="user.emailStatus != null and user.emailStatus!=0">
+            ,email_status=#{user.emailStatus}
+        </if>
+        <if test="user.status != null and user.status!=0">
+            ,status=#{user.status}
+        </if>
+        <if test="user.salt!=null and user.salt!=''">
+            ,salt=#{user.salt,jdbcType=VARCHAR}
+        </if>
+
+        <if test="user.buId!=null and user.buId!=''">
+            ,bu_id=#{user.buId}
+        </if>
+        <if test="user.registerBy!=null and user.registerBy!=''">
+            ,register_by=#{user.registerBy}
+        </if>
+        <if test="user.clientId !=null and user.clientId !=''">
+            ,client_id=#{user.clientId,jdbcType=VARCHAR}
+        </if>
+        <if test="user.age!=null and user.age!=''">
+            ,age=#{user.age}
+        </if>
+        <if test="user.gender!=null and user.gender!=''">
+            ,gender=#{user.gender,jdbcType=VARCHAR}
+        </if>
+        <if test="user.profile!=null and user.profile!=''">
+            ,profile=#{user.profile,jdbcType=VARCHAR}
+        </if>
+        <if test="user.avatarUrl!=null and user.avatarUrl!=''">
+            ,avatar=#{user.avatarUrl,jdbcType=VARCHAR}
+        </if>
+        <if test="user.birthday!=null and user.birthday!=''">
+            ,birthday=#{user.birthday}
+        </if>
+        <if test="user.province!=null and user.province!=''">
+            ,province=#{user.province,jdbcType=VARCHAR}
+        </if>
+        <if test="user.city!=null and user.city!=''">
+            ,city=#{user.city,jdbcType=VARCHAR}
+        </if>
+        <if test="user.district!=null and user.district!=''">
+            ,district=#{user.district,jdbcType=VARCHAR}
+        </if>
+        <if test="user.street!=null and user.street!=''">
+            ,street=#{user.street,jdbcType=VARCHAR}
+        </if>
+        <if test="user.addressDetail!=null and user.addressDetail!=''">
+            ,address_detail=#{user.addressDetail,jdbcType=VARCHAR}
+        </if>
+        <if test="user.createTime!=null and user.createTime!=''">
+            ,create_time=#{user.createTime}
+        </if>
+        <if test="user.idCardNo!=null and user.idCardNo!=''">
+            ,id_card_no=#{user.idCardNo,jdbcType=VARCHAR}
+        </if>
+        <if test="user.idCardName!=null and user.idCardName!=''">
+            ,id_card_name=#{user.idCardName,jdbcType=VARCHAR}
+        </if>
+        <if test="user.openId!=null and user.openId!=''">
+            ,open_id=#{user.openId,jdbcType=VARCHAR}
+        </if>
+        <if test="user.thirdId!=null and user.thirdId!=''">
+            ,third_id=#{user.thirdId}
+        </if>
+
+        <if test="user.qqNo!=null and user.qqNo!=''">
+            ,qq_no=#{user.qqNo}
+        </if>
+        <if test="user.loginRec!=null and user.loginRec!=''">
+            ,login_rec=#{user.loginRec}
+        </if>
+        where id =${seqId}
+
+    </update>
+
+    <select id="queryUserById" resultMap="BaseResultMap">
+        select
+        <include refid="base_column_list"/>
+        from ${tableName}
+        where id =${seqId}
+
+    </select>
+
+    <select id="queryByDomeId" resultMap="BaseResultMap">
+        select
+        <include refid="base_column_list"/>
+        from ${tableName}
+        where id =${seqId} and user_id = #{userId,jdbcType=VARCHAR} and third_id = ${thirdId}
+
+    </select>
+
+    <select id="queryUserByUserId" resultMap="BaseResultMap">
+        select
+        <include refid="base_column_list"/>
+        from ${tableName}
+        where user_id = #{userId,jdbcType=VARCHAR}
+
+    </select>
+
+    <select id="queryUserIdById" resultType="java.lang.String">
+        select user_id
+        from ${tableName}
+        where id = #{seqId}
+    </select>
+
+</mapper>

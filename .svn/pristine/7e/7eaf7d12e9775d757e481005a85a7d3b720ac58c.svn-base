@@ -1,0 +1,249 @@
+package com.qbao.store.controller.captha;
+
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
+
+import javax.imageio.ImageIO;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.RiskConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.google.code.kaptcha.Producer;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.util.InitConstants;
+import com.qbao.store.util.UserCenterContext;
+
+import sun.misc.BASE64Encoder;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年8月4日 上午9:26:09 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年8月4日 上午9:26:09 	修改人：
+ *  	描述	:
+ ***********************************************************
+ */
+@Controller  
+@RequestMapping("/captcha")  
+public class CaptchaController extends BaseController
+{
+	private static final Logger log = LoggerFactory.getLogger(CaptchaController.class);
+	
+    @Autowired  
+    private Producer captchaProducer;
+    
+    @ResponseBody
+    @RequestMapping(value = "/getValidateCode")
+    public String getValidateCode(String buId, HttpServletRequest request, HttpServletResponse response)
+    {
+        try{
+        	validateBuId(buId);
+
+        	Map<String, String> result = new HashMap<String, String>();
+        	
+            // 从图形验证码生产者中获取图形验证码值
+        	String captchaKey = getCaptchaKey(buId);
+            String capText = produceValidateCode(captchaProducer.createText());
+            
+            cacheResult(captchaKey, capText);
+
+            BufferedImage bufferedImage = captchaProducer.createImage(capText);
+            
+            String base64Image = getBase64StringFromImage(bufferedImage);
+            
+            result.put(RiskConstants.CAPTCHA, base64Image);
+            result.put(RiskConstants.CAPTCHA_KEY, captchaKey);
+            //result.put(RiskConstants.CAPTCHA_EXPIRE_TIME, InitConstants.getInitValueByName(RiskConstants.CAPTCHA_EXPIRE_TIME));
+            
+            return JSONObject.toJSONString(buildResponse(result));
+           
+        }catch(Exception e){
+            log.error("验证码返回失败！" , e);
+            return handleException("验证码生成失败", e); 
+        }
+    }
+
+    private String produceValidateCode(String originalStr){
+        String capText = "";
+        Integer firstInt = Integer.parseInt(originalStr.substring(0, 1));
+        Integer lastInt = Integer.parseInt(originalStr.substring(1, 2));
+        Random random = new Random();
+        switch (OperationType.geOperationTypeByCode(random.nextInt(2) + 1)) {
+        case add:
+			capText = firstInt + OperationType.add.getOpName() + lastInt;
+			break;
+        case minus:
+        	if(firstInt < lastInt)
+        	{
+        		capText = lastInt + OperationType.minus.getOpName() + firstInt;
+        	}
+        	else
+        	{
+        		capText = firstInt + OperationType.minus.getOpName() + lastInt;
+        	}
+			break;
+        case times:
+			capText = firstInt + OperationType.times.getOpName() + lastInt;
+			break;
+		default:
+			capText = firstInt + OperationType.add.getOpName() + lastInt;
+			break;
+		}
+        return capText;
+    }
+    
+    private void cacheResult(String captchaKey, String capText){
+        Integer cacheResult = null;
+        BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData().getBuId());
+        Map<String, String> map = new HashMap<String, String>();
+        String captchaResultMap = RiskConstants.REDIS_CAPTCHA_KEY_PREFIX + captchaKey;
+        Integer firstInt = Integer.parseInt(capText.substring(0, 1));
+        String opName = capText.substring(1, 2);
+        Integer lastInt = Integer.parseInt(capText.substring(2, 3));
+        switch (OperationType.geOperationTypeByName(opName)) {
+        case add:
+			cacheResult = firstInt + lastInt;
+			break;
+        case minus:
+        	if(firstInt < lastInt)
+        	{
+        		cacheResult = lastInt - firstInt;
+        	}
+        	else
+        	{
+        		cacheResult = firstInt - lastInt;
+        	}
+			break;
+        case times:
+			cacheResult = firstInt * lastInt;
+			break;
+		default:
+			cacheResult = firstInt + lastInt;
+			break;
+		}
+        log.debug("生成图片验证码：" + firstInt + opName + lastInt);
+        map.put(RiskConstants.RECORD_RESULT, String.valueOf(cacheResult));
+        RedisUtil.del(captchaResultMap);
+        RedisUtil.hmset(captchaResultMap, map);
+        int expireTime = InitConstants.getValue(buEnum, RiskConstants.CAPTCHA_EXPIRE_TIME, Integer.class);
+        RedisUtil.expire(captchaResultMap, expireTime);
+    }
+    
+    enum OperationType
+    {
+    	add(1, "+"),
+    	minus(2, "-"),
+    	times(3, "*");
+    	
+    	private Integer opCode;
+    	private String opName;
+    	
+    	OperationType(Integer opCode, String opName) 
+    	{
+    		this.setOpCode(opCode);
+    		this.setOpName(opName);
+		}
+    	
+    	public static OperationType geOperationTypeByCode(Integer opCode)
+		{
+			for(OperationType opType : OperationType.values())
+			{
+				if(opCode != null && opCode == opType.getOpCode())
+				{
+					return opType;
+				}
+			}
+			return null;
+		}
+    	
+    	public static OperationType geOperationTypeByName(String opName)
+		{
+			for(OperationType opType : OperationType.values())
+			{
+				if(StringUtils.isNotBlank(opName) && opName.equals(opType.getOpName()))
+				{
+					return opType;
+				}
+			}
+			return null;
+		}
+
+		public String getOpName() {
+			return opName;
+		}
+
+		public void setOpName(String opName) {
+			this.opName = opName;
+		}
+		
+
+		public Integer getOpCode() {
+			return opCode;
+		}
+
+		public void setOpCode(Integer opCode) {
+			this.opCode = opCode;
+		}
+    	
+    }
+    
+    public static String getBase64StringFromImage(BufferedImage bufferedImage)
+    {
+    	ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        try {
+			ImageIO.write(bufferedImage, "jpg", outputStream);
+		} catch (IOException e) {
+			log.error("图片转化base64失败！", e);
+			throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+		}finally {
+			IOUtils.closeQuietly(outputStream);
+		}
+        BASE64Encoder encoder = new BASE64Encoder();
+        return encoder.encode(outputStream.toByteArray());
+    }
+    
+    private String getCaptchaKey(String buId)
+    {
+    	String captchaKey = UserCenterContext.getReqestData().getCaptchaKey();
+    	BUEnum buEnum = BUEnum.getFromKey(buId);
+    	int expireTime = InitConstants.getValue(buEnum, RiskConstants.CAPTCHA_EXPIRE_TIME, Integer.class);
+    	int extendTime = expireTime + 60;
+    	if(StringUtils.isBlank(captchaKey))
+    	{
+        	captchaKey = RedisUtil.get(RiskConstants.REDIS_CAPTCHAKEY);
+        	if(StringUtils.isBlank(captchaKey))
+        	{
+        		RedisUtil.set(RiskConstants.REDIS_CAPTCHAKEY, "1", extendTime);
+        		captchaKey = "1";
+        	}
+    	}
+    	
+    	RedisUtil.incr(RiskConstants.REDIS_CAPTCHAKEY, 1);
+    	RedisUtil.expire(RiskConstants.REDIS_CAPTCHAKEY, extendTime);
+    	return captchaKey + RandomStringUtil.generateStringByLength(7);
+    }
+    
+}  

@@ -1,0 +1,59 @@
+package com.bqiong.usercenter.constants;
+
+import org.apache.commons.lang3.StringUtils;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年5月17日 下午3:03:26 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年5月17日 下午3:03:26 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public enum BUEnum 
+{
+	DOME_SDK("DOME001"),
+	DOME_APP_STORE("DOME002"),
+	PUBLISH("DOME003"),
+	TRADECENTER("DOME004"),
+	OVERSEASDK("DOME005"),
+	PASSPORT("DOME006"),
+	DMOE_H5("DOME007"),
+    H5_YOUPIAO("DOME008");
+
+	private String buId;
+	
+	private BUEnum(String buId) 
+	{
+		this.buId = buId;
+	}
+
+	public String getBuId() {
+		return buId;
+	}
+
+	public void setBuId(String buId) {
+		this.buId = buId;
+	}
+	
+	public static final BUEnum getFromKey(String buId) 
+	{
+		if(StringUtils.isBlank(buId))
+		{
+			return null;
+		}
+        for (BUEnum e : BUEnum.values()) 
+        {
+            if (buId.equals(e.getBuId()))
+            {
+                return e;
+            }
+        }
+        return null;
+    }
+	
+}

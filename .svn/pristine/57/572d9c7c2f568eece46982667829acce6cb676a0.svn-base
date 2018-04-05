@@ -1,0 +1,129 @@
+package com.qbao.store.controller.user;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.annotation.Risk;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.service.LoginService;
+import com.qbao.store.service.risk.RiskService;
+import com.qbao.store.util.BizUtil;
+import com.qbao.store.util.InitConstants;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Controller
+@RequestMapping("/login")
+public class LoginController extends IBaseController {
+    @Autowired
+    private LoginService loginService;
+
+    @Autowired
+    private RiskService riskService;
+
+    /**
+     * login
+     * String countryCode,
+     * String passport, String password, String clientId, String buId
+     *
+     * @param requestData
+     * @return
+     */
+    @Risk
+    @OperateType(bizType = BizType.login)
+    @RequestMapping("/login")
+    @ResponseBody
+    public String login(RequestData requestData) {
+        try {
+            BUEnum bu = validateBuId(requestData.getBuId());
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(requestData.getClientId()) && bu != BUEnum.DOME_SDK) {
+                requestData.setClientId(requestData.getBuId());
+            }
+            validateClientId(requestData.getClientId());
+            PassportType type = validatePassport(requestData.getCountryCode(), requestData.getPassport());
+            validatePassword(requestData.getPassword(), isAESContent(BUEnum.getFromKey(requestData.getBuId())));
+            UserEntity entity = loginService.login(requestData, type);
+            if (entity == null) {
+                logger.error("登录失败！");
+                throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+            }
+            String accessToken = cacheToken(BizUtil.distinguishPlatformOrGame(bu, requestData.getClientId()), entity.getUserId(), entity.getSalt());
+            riskService.clearRisk();
+            Map<String, String> ret = new HashMap<String, String>();
+            ret.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            ret.put(UserCenterConstants.USER_ID, entity.getUserId());
+            return JSONObject.toJSONString(BaseResponse.success(ret));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+    /**
+     * 风控。
+     * 每次请求，在风控的set中+1
+     * 如果大于风控次数，则验证验证码。
+     * 如果登录成功则清除风控。
+     *
+     * @return
+     */
+    public Map<String, Object> risk(BUEnum buEnum, String passport, String captchaKey, String captchaCode) {
+        //获取风控次数
+        String switchValue = InitConstants.getValue(buEnum, RiskConstants.CAPTCHA_SWITCH);
+        //获取风控错误次数
+        Long num = RedisUtil.incrByStep(RiskConstants.REDIS_CAPTCHA_COUNT_KEY_PREFIX + ":" + passport, 1);
+        Map<String, Object> ret = null;
+        //大于风控次数
+        if (num > Long.parseLong(switchValue)) {
+            ret = new HashMap<String, Object>();
+            ret.put(RiskConstants.NEED_CAPTCHA, true);
+            if (StringUtils.isEmpty(captchaKey) || StringUtils.isEmpty(captchaCode)) {
+                logger.info("没有验证码");
+                throw new BizException(ErrorCode.CAPTCHA_NULL.getCode());
+            }
+            //获取验证码结果
+            Map<String, String> cache = RedisUtil.hget(RiskConstants.REDIS_CAPTCHA_KEY_PREFIX + captchaKey);
+            String code = cache.get(RiskConstants.RECORD_RESULT);
+            if (!StringUtils.equals(code, captchaCode)) {
+                logger.info("验证码错误,查询验证码->code:{},cpatcha:{}", code, captchaCode);
+                throw new BizException(ErrorCode.CAPTCHA_WRONG.getCode());
+            }
+        }
+        return ret;
+    }
+
+    /**
+     * 清除风控。
+     * 在登录成功之后，清除验证码。
+     *
+     * @param buEnum
+     * @param passport
+     * @param captchaKey
+     */
+    public void clearRisk(BUEnum buEnum, String passport, String captchaKey) {
+
+        RedisUtil.del(RiskConstants.REDIS_CAPTCHA_COUNT_KEY_PREFIX + ":" + passport);
+        RedisUtil.del(RiskConstants.REDIS_CAPTCHA_KEY_PREFIX + captchaKey);
+    }
+
+
+//    /**
+//     * 获取风控次数的key
+//     * @return
+//     */
+//	private String getCaptchaRiskCountKey(){
+//		return RiskConstants.REDIS_CAPTCHA_COUNT_KEY_PREFIX + UserCenterContext.getReqestData().getMobile() + ":" + UserCenterContext.getReqestData().getBuId();
+//	}
+
+}

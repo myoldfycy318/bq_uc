@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+    http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+     http://www.springframework.org/schema/util
+     http://www.springframework.org/schema/util/spring-util-4.0.xsd
+    "
+       default-lazy-init="false">
+
+    <bean id="aesUtils" class="com.bqiong.usercenter.util.aes.AESUtils">
+        <property name="passKey" value="${passKey}"/>
+    </bean>
+
+    <bean id="smsClientConfig" class="com.api.sms.common.config.SMSClientConfig">
+        <property name="url" value="${smscenter.url}"/>
+    </bean>
+
+    <bean id="mailUtil" class="com.bqiong.usercenter.util.MailUtil">
+        <property name="auth" value="${mail.smtp.auth}"/>
+        <property name="host" value="${mail.smtp.host}"/>
+        <property name="user" value="${mail.user}"/>
+        <property name="password" value="${mail.password}"/>
+    </bean>
+
+    <bean class="com.qbao.store.huanxin.tool.Global">
+        <property name="appKey" value="${huanxin.appKey}"/>
+        <property name="appClientId" value="${huanxin.appClientId}"/>
+        <property name="appClientSecret" value="${huanxin.appClientSecret}"/>
+    </bean>
+
+    <bean id="httpCommonUtil" class="com.bqiong.usercenter.util.HttpCommonUtil">
+        <property name="baUrl" value="${ba.url}"/>
+    </bean>
+
+    <bean id="propertiesUtil" class="com.bqiong.usercenter.util.PropertiesUtil" init-method="init">
+        <property name="filePathList" ref="filePathList"/>
+    </bean>
+    <util:list id="filePathList" list-class="java.util.ArrayList">
+        <value>/param.properties</value>
+    </util:list>
+
+    <bean id="captchaProducer" class="com.google.code.kaptcha.impl.DefaultKaptcha">
+        <property name="config">
+            <bean class="com.google.code.kaptcha.util.Config">
+                <constructor-arg>
+                    <props>
+                        <prop key="kaptcha.border">no</prop>
+                        <prop key="kaptcha.border.color">105,179,90</prop>
+                        <prop key="kaptcha.textproducer.font.color">11,15,245</prop>
+                        <prop key="kaptcha.image.width">100</prop>
+                        <prop key="kaptcha.noise.color">255,0,102</prop>
+                        <prop key="kaptcha.image.height">40</prop>
+                        <prop key="kaptcha.session.key">code</prop>
+                        <prop key="kaptcha.textproducer.char.length">2</prop>
+                        <prop key="kaptcha.textproducer.font.names">宋体</prop>
+                        <prop key="kaptcha.textproducer.char.string">123456789</prop>
+                        <prop key="kaptcha.textproducer.font.size">23</prop>
+                        <prop key="kaptcha.background.clear.from">white</prop>
+                        <prop key="kaptcha.background.clear.to">white</prop>
+                        <prop key="kaptcha.noise.impl">com.qbao.store.captcha.ImageNoise</prop>
+                        <prop key="kaptcha.word.impl">com.qbao.store.captcha.BqWordRenderer</prop>
+                        <prop key="kaptcha.obscurificator.impl">com.qbao.store.captcha.KaptchaGimpy</prop>
+                    </props>
+                </constructor-arg>
+            </bean>
+        </property>
+    </bean>
+</beans>

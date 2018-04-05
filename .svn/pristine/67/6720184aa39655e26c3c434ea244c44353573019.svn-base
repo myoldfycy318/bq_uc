@@ -1,0 +1,9 @@
+###MySQL\u6570\u636e\u6e90\u914d\u7f6e
+mysql.url=jdbc:mysql://192.168.7.79:3306/usercenter?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&autoReconnect=true
+mysql.username=root
+mysql.password=123456
+#\u4ece\u5e93\u6570\u636e\u6e90
+mysql.slave.url=jdbc:mysql://192.168.7.79:3306/usercenter?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&autoReconnect=true
+mysql.slave.username=root
+mysql.slave.password=123456
+

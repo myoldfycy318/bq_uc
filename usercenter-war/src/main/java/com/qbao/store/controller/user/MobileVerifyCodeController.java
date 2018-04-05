@@ -1,0 +1,341 @@
+package com.qbao.store.controller.user;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.Risk;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.service.index.MobileIndexService;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * **********************************************************
+ * 内容摘要	：<p>
+ * <p>
+ * 作者	：94841
+ * 创建时间	：2016年4月22日 下午3:48:11
+ * 当前版本号：v1.0
+ * 历史记录	:
+ * 日期	: 2016年4月22日 下午3:48:11 	修改人：niuzan
+ * 描述	:
+ * **********************************************************
+ */
+@Controller
+@RequestMapping("/mobile")
+public class MobileVerifyCodeController extends BaseController {
+    @Autowired
+    private MobileIndexService mobileIndexService;
+
+    /**
+     * 函数名称 : getCode
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param mobile
+     * @param userIp
+     * @param clientId
+     * @param request
+     * @return 修改记录：
+     * 日期 ：2016年4月22日 下午6:06:28	修改人：  niuzan
+     * 描述	：
+     */
+    @RequestMapping("/getCode")
+    @ResponseBody
+    @Risk
+    public String getCode(String bizType, @RequestParam(defaultValue = "86") String countryCode, String mobile, String userIp, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+
+            validateIp(userIp);
+            validateBizType(bizType);
+            validatePassport(countryCode, mobile);
+            PassportType type = PassportType.getPassportType(mobile);
+            if (type != PassportType.mobile) {
+                log.error("参数passport类型错误, passport = " + mobile);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+            }
+            if (!mobile.startsWith("100")) {
+                cacheMobileCode(bizType, countryCode, mobile, userIp, clientId);
+            }
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException("mobile=" + mobile + ", userIp=" + userIp + ",buId=" + buId + ",clientId=" + clientId, e);
+        }
+    }
+
+
+    /**
+     * 函数名称 : getCode4Test
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param bizType
+     * @param countryCode TODO
+     * @param mobile
+     * @param userIp
+     * @param clientId
+     * @param buId
+     * @param request
+     * @return 修改记录：
+     * 日期 ：2016年7月28日 下午12:24:20	修改人：  nz
+     * 描述	：这个方法是为测试写的，没有实际业务功能
+     */
+    @RequestMapping("/getCode4Test")
+    @ResponseBody
+    public String getCode4Test(String bizType, @RequestParam(defaultValue = "86") String countryCode, String mobile, String userIp, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            validateIp(userIp);
+            validateBizType(bizType);
+            PassportType type = validatePassport(countryCode, mobile);
+            if (type != PassportType.mobile) {
+                log.error("手机号码类型错误, mobile = " + mobile);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+            }
+
+            Map<String, String> result = new HashMap<String, String>();
+            String mobileIdxVal = RedisUtil.hget(RedisContant.EMAIL_IDX, mobile);
+            if (BizType.getFromKey(bizType) == BizType.register) {
+                //查询手机号是否注册过
+                if (StringUtils.isNotBlank(mobileIdxVal)) {
+                    log.error(ErrorCode.PASSPORT_EXIST.getMessage());
+                    return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_EXIST));
+                }
+                String mobileCode = SMSUtils.getSmsCodeByMobile(mobile, clientId, BizType.getFromKey(bizType).name());
+                result.put(UserCenterConstants.MOBILE_CODE, mobileCode);
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+
+            if (BizType.getFromKey(bizType) == BizType.resetPassword) {
+                //查询手机号是否注册过
+                if (StringUtils.isBlank(mobileIdxVal)) {
+                    log.error(ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+                    return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_NOT_EXIST));
+                }
+                String mobileCode = SMSUtils.getSmsCodeByMobile(mobile, clientId, BizType.getFromKey(bizType).name());
+                result.put(UserCenterConstants.MOBILE_CODE, mobileCode);
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+
+            /**
+             * 发行需求逻辑，邮箱账号绑定手机
+             */
+            if (BizType.getFromKey(bizType) == BizType.bind) {
+                String mobileCode = SMSUtils.getSmsCodeByMobile(mobile, clientId, BizType.getFromKey(bizType).name());
+                result.put(UserCenterConstants.MOBILE_CODE, mobileCode);
+                return JSONObject.toJSONString(BaseResponse.success());
+            }
+            log.error("非法的业务类型！" + "bizType = " + bizType);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        } catch (Exception e) {
+            return handleException("mobile=" + mobile + ", userIp=" + userIp + ",buId=" + buId + ",clientId=" + clientId, e);
+        }
+    }
+
+    /**
+     * 函数名称 : verifyCode
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param bizType
+     * @param countryCode TODO
+     * @param mobile
+     * @param userIp
+     * @param clientId
+     * @param buId
+     * @return 修改记录：
+     * 日期 ：2016年5月10日 上午10:11:41	修改人：
+     * 描述	：
+     */
+    @RequestMapping("/verifyCode")
+    @ResponseBody
+    public String verifyCode(
+            @RequestParam(defaultValue = "86") String countryCode,
+            String bizType,
+            String mobile,
+            String userIp,
+            String clientId,
+            String buId,
+            String mobileCode) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+
+            }
+            validateIp(userIp);
+            validateBizType(bizType);
+            PassportType type = validatePassport(countryCode, mobile);
+            if (type != PassportType.mobile) {
+                log.error("手机号码类型错误, mobile = " + mobile);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+            }
+
+            String smsToken = "";
+            Map<String, String> result = new HashMap<String, String>();
+
+            String mobileIdxVal = RedisUtil.hget(RedisContant.MOBILE_IDX, mobile);
+
+            if (BizType.getFromKey(bizType) == BizType.register || BizType.getFromKey(bizType) == BizType.bind) {
+                //查询手机号是否注册过
+                if (StringUtils.isNotBlank(mobileIdxVal)) {
+                    log.error(ErrorCode.PASSPORT_EXIST.getMessage());
+                    return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_EXIST));
+                }
+                SMSUtils.verifySmsCode(countryCode, mobile, mobileCode, clientId, BizType.getFromKey(bizType).name());
+
+                smsToken = SMSUtils.cacheSmsToken(mobile, clientId, BizType.getFromKey(bizType).name());
+                result.put(UserCenterConstants.SMS_TOKEN, smsToken);
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+
+            if (BizType.getFromKey(bizType) == BizType.resetPassword || BizType.getFromKey(bizType) == BizType.changeBind) {
+                //查询手机号是否注册过
+                if (StringUtils.isBlank(mobileIdxVal)) {
+                    log.error(ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+                    return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_NOT_EXIST));
+                }
+                SMSUtils.verifySmsCode(countryCode, mobile, mobileCode, clientId, BizType.getFromKey(bizType).name());
+
+                smsToken = SMSUtils.cacheSmsToken(mobile, clientId, BizType.getFromKey(bizType).name());
+
+                result.put(UserCenterConstants.SMS_TOKEN, smsToken);
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+
+            /**
+             * 发行需求逻辑，邮箱账号绑定手机
+             */
+//            if (BizType.getFromKey(bizType) == BizType.bind) {
+//                SMSUtils.verifySmsCode(countryCode, mobile, mobileCode, clientId, BizType.getFromKey(bizType).name());
+//
+//                //smsToken = SMSUtils.cacheSmsToken(mobile, clientId, BizType.getFromKey(bizType).name());
+//
+//                //result.put(UserCenterConstants.SMS_TOKEN, smsToken);
+//                return JSONObject.toJSONString(BaseResponse.success());
+//            }
+
+
+            log.error("非法的业务类型！" + "bizType = " + bizType);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        } catch (Exception e) {
+            return handleException("mobile=" + mobile + ",mobileCode=" + mobileCode + ", userIp=" + userIp + ",buId=" + buId + ",clientId=" + clientId, e);
+        }
+    }
+
+
+    @RequestMapping("/simpleVerifyCode")
+    @ResponseBody
+    public String verifyCodeWithoutTokenReturn(String bizType, @RequestParam(defaultValue = "86") String countryCode, String mobile, String userIp, String clientId, String buId, String mobileCode, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            validateIp(userIp);
+            validateBizType(bizType);
+            PassportType type = validatePassport(countryCode, mobile);
+            if (type != PassportType.mobile) {
+                log.error("手机号码类型错误, mobile = " + mobile);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+            }
+            String mobileIdxVal = RedisUtil.hget(RedisContant.MOBILE_IDX, mobile);
+            if (BizType.getFromKey(bizType) == BizType.register) {
+                //查询手机号是否注册过
+                if (StringUtils.isNotBlank(mobileIdxVal) && BUEnum.getFromKey(clientId) != BUEnum.PUBLISH) {
+                    log.error(ErrorCode.PASSPORT_EXIST.getMessage());
+                    return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_EXIST));
+                }
+                SMSUtils.verifySmsCode(countryCode, mobile, mobileCode, clientId, BizType.getFromKey(bizType).name());
+                return JSONObject.toJSONString(BaseResponse.success());
+            }
+
+            if (BizType.getFromKey(bizType) == BizType.resetPassword) {
+                //查询手机号是否注册过
+                if (StringUtils.isBlank(mobileIdxVal) && BUEnum.getFromKey(clientId) != BUEnum.PUBLISH) {
+                    log.error(ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+                    return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_NOT_EXIST));
+                }
+                SMSUtils.verifySmsCode(countryCode, mobile, mobileCode, clientId, BizType.getFromKey(bizType).name());
+
+                return JSONObject.toJSONString(BaseResponse.success());
+            }
+            /**
+             * 发行需求逻辑，邮箱账号绑定手机
+             */
+            if (BizType.getFromKey(bizType) == BizType.bind) {
+                SMSUtils.verifySmsCode(countryCode, mobile, mobileCode, clientId, BizType.getFromKey(bizType).name());
+
+                //smsToken = SMSUtils.cacheSmsToken(mobile, clientId, BizType.getFromKey(bizType).name());
+
+                //result.put(UserCenterConstants.SMS_TOKEN, smsToken);
+                return JSONObject.toJSONString(BaseResponse.success());
+            }
+            log.error("非法的业务类型！" + "bizType = " + bizType);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        } catch (Exception e) {
+            return handleException("mobile=" + mobile + ",mobileCode=" + mobileCode + ", userIp=" + userIp + ",buId=" + buId + ",clientId=" + clientId, e);
+        }
+    }
+
+    private void cacheMobileCode(String bizType, String countryCode, String mobile, String userIp, String clientId) {
+        String mobileIdxVal = RedisUtil.hget(RedisContant.MOBILE_IDX, mobile);
+        if (BizType.getFromKey(bizType) == BizType.register || BizType.getFromKey(bizType) == BizType.bind) {
+            //查询手机号是否注册过
+            if (StringUtils.isNotBlank(mobileIdxVal) && BUEnum.getFromKey(clientId) != BUEnum.PUBLISH) {
+                log.error(ErrorCode.PASSPORT_EXIST.getMessage());
+                throw new BizException(ErrorCode.PASSPORT_EXIST.getCode());
+            }
+            SMSUtils.generateAndSaveVerifyCode(countryCode, mobile, userIp, clientId, BizType.getFromKey(bizType).name());
+            return;
+        }
+        //重置密码或换绑手机号。必须是存在的手机号
+        if (BizType.getFromKey(bizType) == BizType.resetPassword || BizType.changeBind == BizType.getFromKey(bizType)) {
+            //查询手机号是否注册过
+            if (StringUtils.isBlank(mobileIdxVal) && BUEnum.getFromKey(clientId) != BUEnum.PUBLISH) {
+                log.error(ErrorCode.PASSPORT_NOT_EXIST.getMessage());
+                throw new BizException(ErrorCode.PASSPORT_NOT_EXIST.getCode());
+            }
+            SMSUtils.generateAndSaveVerifyCode(countryCode, mobile, userIp, clientId, BizType.getFromKey(bizType).name());
+            return;
+        }
+        if (BizType.getFromKey(bizType) == BizType.idcard) {
+
+            SMSUtils.generateAndSaveVerifyCode(countryCode, mobile, userIp, clientId, BizType.getFromKey(bizType).name());
+            return;
+        }
+        log.error("非法的业务类型！" + "bizType = " + bizType);
+        throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+    }
+
+}

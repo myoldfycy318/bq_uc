@@ -1,0 +1,177 @@
+package com.qbao.store.controller.thirdpart.thirdOauth;
+
+import com.alibaba.druid.sql.dialect.sqlserver.visitor.SQLServerParameterizedOutputVisitor;
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.util.HttpUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * QQ第三方授权登录
+ * Created by admin on 2017/7/24.
+ */
+@Controller
+@RequestMapping("/thirdOauthLogin/qq")
+public class QqController extends BaseController {
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+
+    /**
+     * pc端获取code方式
+     * 此code会在10分钟内过期。
+     *
+     * @return
+     */
+    @RequestMapping("/authorize")
+    @ResponseBody
+    public void authorize(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            String url = propertiesUtil.getString("qq.authorizeUrl").trim()
+                    + "?client_id=" + propertiesUtil.getString("qq.appId").trim()
+                    + "&redirect_uri=" + URLEncoder.encode(propertiesUtil.getString("qq.redirectUri").trim(), "UTF-8")
+                    + "&response_type=code&state=" + request.getParameter("buId");
+            Map<String, String> data = new HashMap<String, String>();
+            data.put("url", url);
+            response.sendRedirect(url);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 根据code获取accessToken,根据accessToken获取openID ,根据openID获取userInfo
+     */
+    @RequestMapping("/login")
+    public void login(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        String code = request.getParameter("code");
+        String state = request.getParameter("state");
+        StringBuilder errorMsg = new StringBuilder(propertiesUtil.getString(state + ".error.redirectUri").trim());
+        errorMsg.append("?");
+        if (StringUtils.isBlank(code)) {
+            log.error("QQ获取授权码失败!");
+            errorMsg.append("message").append("=").append("QQ获取授权码失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String qqToken = getQqAccessTokenByCode(code);//获取token 返回值格式是url参数字符串
+        if (StringUtils.isBlank(qqToken)) {
+            log.error("QQ获取accessToken失败!line:QqController 72");
+            errorMsg.append("message").append("=").append("QQQ获取accessToken失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String openIdStr = getOpenIdByToken(qqToken);
+        if (StringUtils.isBlank(openIdStr)) {
+            log.error("QQ获取openId失败!line:QqController 78");
+            errorMsg.append("message").append("=").append("QQ获取openId失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String userStr = getQqUserByOpenId(openIdStr, qqToken);
+        if (StringUtils.isBlank(userStr)) {
+            log.error("QQ获取用户信息失败!line:QqController 84");
+            errorMsg.append("message").append("=").append("QQ获取用户信息失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        StringBuilder sb = new StringBuilder("/thirdOauthLogin/thirdLogin").append("?");
+        sb.append("openId").append("=").append(openIdStr).append("&");
+        sb.append("userName").append("=").append(JSONObject.parseObject(userStr).getString("nickname")).append("&");
+        sb.append("avatarUrl").append("=").append(JSONObject.parseObject(userStr).getString("figureurl_qq_1")).append("&");
+        sb.append("gender").append("=").append(JSONObject.parseObject(userStr).getString("gender").equals("女")? "F" : "M").append("&");
+        sb.append("thirdId").append("=").append("3").append("&");
+        sb.append("state").append("=").append(state);
+        request.getRequestDispatcher(sb.toString()).forward(request, response);
+    }
+
+
+    /**
+     * QQ PC网站 获取access_token
+     * 返回值是access_token=1368BB2CDDF10201D461E0F1A5D2EEB0&expires_in=7776000&refresh_token=F209BE8CAE2D97928C80347274B4BD61
+     * 接口调用有错误时，会返回code和msg字段，以url参数对的形式返回，value部分会进行url编码（UTF-8）。
+     *
+     * @param code
+     * @return
+     */
+    @RequestMapping("/getQqAccessTokenByCode")
+    @ResponseBody
+    public String getQqAccessTokenByCode(String code) throws Exception {
+        String url = propertiesUtil.getString("qq.accessTokenUrl").trim()
+                + "?grant_type=authorization_code&client_id=" + propertiesUtil.getString("qq.appId").trim()
+                + "&client_secret=" + propertiesUtil.getString("qq.appSercert").trim()
+                + "&code=" + code
+                + "&redirect_uri=" + URLEncoder.encode(propertiesUtil.getString("qq.redirectUri").trim(), "UTF-8");
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        String[] backStrArr = backStr.split("&");
+        if (StringUtils.contains(backStrArr[0], "access_token=")) {
+            return backStrArr[0];
+        } else {
+            log.error("QQ pc网站获取access_token失败,code:{},msg:{}", backStrArr[0], backStrArr[1]);
+        }
+        return null;
+    }
+
+    /**
+     * 通过access_token获取openID
+     * callback( {"client_id":"YOUR_APPID","openid":"YOUR_OPENID"} );
+     * 接口调用有错误时，会返回code和msg字段，以url参数对的形式返回，value部分会进行url编码（UTF-8）。
+     */
+    public String getOpenIdByToken(String access_token) {
+        String url = propertiesUtil.getString("qq.openIDUrl").trim() + "?" + access_token;
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        System.out.println(backStr);
+        if (StringUtils.contains(backStr, "callback(")) {
+            backStr = StringUtils.replaceOnce(backStr, "callback(", " ");
+            backStr = StringUtils.replaceOnce(backStr, ")", " ");
+            backStr = StringUtils.replaceOnce(backStr, ";", " ");
+            backStr = StringUtils.trim(backStr);
+            if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("openid"))) {
+                return JSONObject.parseObject(backStr).getString("openid");
+            }
+        }
+        return null;
+    }
+
+    /**
+     * QQ获取用户信息
+     *
+     * @param openid
+     * @param access_token
+     * @return 正确返回值:
+     * {
+     * "ret":0,
+     * "msg":"",
+     * "nickname":"YOUR_NICK_NAME",
+     * ...
+     * }
+     * 错误返回值:
+     * { “ret”:1002, “msg”:”请先登录” }
+     */
+    @RequestMapping("/getQqUserByOpenId")
+    @ResponseBody
+    public String getQqUserByOpenId(String openid, String access_token) {
+        String url = propertiesUtil.getString("qq.userUrl").trim()
+                + "?" + access_token
+                + "&oauth_consumer_key=" + propertiesUtil.getString("qq.appId").trim()
+                + "&openid=" + openid + "&format=json";
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("ret")) && JSONObject.parseObject(backStr).getString("ret").equals("0")) {
+            return backStr;
+        } else {
+            log.error("获取QQ用户信息失败,ret:{};msg:{}", JSONObject.parseObject(backStr).getString("ret"), JSONObject.parseObject(backStr).getString("msg"));
+        }
+        return null;
+    }
+
+}

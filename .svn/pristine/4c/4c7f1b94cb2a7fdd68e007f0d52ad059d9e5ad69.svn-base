@@ -1,0 +1,378 @@
+package com.qbao.store.controller.user;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.CommonUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserDetailEntity;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.UserDetailService;
+import com.qbao.store.util.BizUtil;
+import com.qbao.store.util.CollectDataLog;
+import com.qbao.store.util.TokenUtil;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.amqp.core.AmqpTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Controller
+@RequestMapping("/user")
+public class UserController extends BaseController {
+
+    @Autowired
+    private UserBasicService userBasicService;
+
+    @Autowired
+    UserDetailService userDetailService;
+
+    @Autowired
+    protected AmqpTemplate amqpTemplate;
+
+    /**
+     * 获取用户基本信息接口
+     */
+    @OperateType(bizType = BizType.getUserInfo)
+    @RequestMapping("/getByToken")
+    @ResponseBody
+    public String getBasicByToken(RequestData requestData) {
+        try {
+            log.info("requestData:{}", JSONObject.toJSONString(requestData));
+            BUEnum bu = CommonUtil.validateBuId(requestData.getBuId());
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                log.error("用户不存在Redis userId=" + requestData.getUserId());
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            TokenUtil.validateTokenSign(requestData.getAccessToken(), _userEntity.getSalt());
+            //延长token时间24小时，只有用户在连续24小时不登录的情况下会需要重新登录
+            TokenUtil.expireToken(requestData.getClientId(), requestData.getUserId());
+            log.info("各平台登录记录:{};本次需记录的是:{}", _userEntity.getLoginRec(), bu.getLoginPlatformCode());
+            if (!StringUtils.contains(_userEntity.getLoginRec(), bu.getLoginPlatformCode())) {
+                _userEntity.setLoginRec(StringUtils.isBlank(_userEntity.getLoginRec()) ? bu.getLoginPlatformCode() + "," : _userEntity.getLoginRec() + bu.getLoginPlatformCode() + ",");
+                amqpTemplate.convertAndSend("user_login_platform_record_queue_key", _userEntity); //异步通知使用rabbitmq
+                log.info("各平台登录记录完成:{}", _userEntity.getLoginRec());
+            }
+            Map<String, Object> data = new HashMap<String, Object>();
+            data.put(UserCenterConstants.DOME_USER_ID, requestData.getUserId());
+            data.put(UserCenterConstants.DOME_USER_NAME, _userEntity.getUserName());
+            String mobile = (StringUtils.isNotBlank(_userEntity.getMobile()) && !_userEntity.getMobile().startsWith("100")) ? _userEntity.getMobile() : "";
+            data.put(UserCenterConstants.DOME_USER_MOBILE, mobile);
+            ThirdPartyEnum thirdPartyEnum = ThirdPartyEnum.getFromKey(_userEntity.getThirdId());
+            if (StringUtils.isNotBlank(_userEntity.getThirdId()) && StringUtils.isNotBlank(_userEntity.getOpenId())
+                    && null != thirdPartyEnum) {
+                switch (thirdPartyEnum) {
+                    case QBAO: //钱宝账号的绑定,前端通过这个确定是否展示钱宝支付
+                        data.put(ThirdConstants.QBAO_UID, _userEntity.getOpenId());
+                        break;
+                }
+            }
+            //增加获取实名认证
+            data.put("checked", StringUtils.isNotEmpty(_userEntity.getIdCardName()) && StringUtils.isNotEmpty(_userEntity.getIdCardNo()));
+            data.put("card", _userEntity.getIdCardNo());//身份证号
+            data.put(UserCenterConstants.DOME_USER_OPENID, StringUtils.isNotBlank(_userEntity.getOpenId()) ? _userEntity.getOpenId() : "");
+            data.put(UserCenterConstants.DOME_USER_THIIRDID, StringUtils.isNotBlank(_userEntity.getThirdId()) ? _userEntity.getThirdId() : "");
+            data.put(UserCenterConstants.DOME_USER_AVATAR, _userEntity.getAvatarUrl());
+            data.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(_userEntity.getAge() == null ? 0 : _userEntity.getAge()));
+            data.put(UserCenterConstants.DOME_USER_GENDER, _userEntity.getGender());
+            BizUtil.updateUserCache(_userEntity);
+            requestData.setRecType("0");
+            CollectDataLog.recordLog(requestData, _userEntity);
+
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + requestData.getAccessToken() + ",clientId=" + requestData.getClientId() + ",buId=" + requestData.getBuId(), e);
+        }
+    }
+
+    /**
+     * 获取登录类型
+     *
+     * @param accessToken
+     * @param clientId
+     * @param buId
+     * @param request
+     * @return
+     */
+    @RequestMapping("/getLoginType")
+    @ResponseBody
+    public String getLoginType(String accessToken, String clientId, String buId, HttpServletRequest request) {
+        try {
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && !BUEnum.isMobileGameBU(buId)) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            BUEnum bu = CommonUtil.validateBuId(buId);
+            String _clientId = BizUtil.distinguishPlatformOrGame(bu, clientId);
+            accessToken = TokenUtil.validateToken(accessToken, _clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, userId);
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                log.error("用户不存在redis中,userValue=" + userValue);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            TokenUtil.validateTokenSign(accessToken, _userEntity.getSalt());
+            //查询用户的登录类型
+            String loginType = RedisUtil.get(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken);
+            LoginTypeEnum type = LoginTypeEnum.getByName(loginType);
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.LOGIN_TYPE, type.name());
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+    @RequestMapping("/auth")
+    @ResponseBody
+    public String auth(String accessToken, String clientId, String buId) {
+        try {
+            BUEnum bu = CommonUtil.validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && !BUEnum.isMobileGameBU(buId)) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            Map<String, String> result = new HashMap<String, String>();
+            String _clientId = BizUtil.distinguishPlatformOrGame(bu, clientId);
+            boolean flag = TokenUtil.validateTokenWithoutException(accessToken, _clientId, isAESContent(BUEnum.getFromKey(buId)));
+            if (!flag) {
+                result.put(UserCenterConstants.AUTH_RESULT, "false");
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+            accessToken = TokenUtil.decryptToken(accessToken);
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            log.info("当前token中解析出来的 userId =" + userId);
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, userId);
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                log.error("当前token中解析用户不存在,解析出来的userId=" + userId);
+                result.put(UserCenterConstants.AUTH_RESULT, "false");
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+            log.info("当前token中解析出来的_userEntity=" + _userEntity);
+            boolean signFlag = TokenUtil.validateTokenSignWithoutException(accessToken, _userEntity.getSalt());
+            if (!signFlag) {
+                result.put(UserCenterConstants.AUTH_RESULT, "false");
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+            result.put(UserCenterConstants.AUTH_RESULT, "true");
+            return JSONObject.toJSONString(buildResponse(result));
+        } catch (Exception e) {
+            return handleException(null, e);
+        }
+    }
+
+    /**
+     * 获取用户详细信息  --- 以后不要用
+     *
+     * @param requestData
+     * @return
+     */
+    @OperateType(bizType = BizType.getUserInfo)
+    @RequestMapping("/getDetailByToken")
+    @ResponseBody
+    public String getDetailByToken(RequestData requestData) {
+        try {
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                log.error("缓存用户不存在");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            TokenUtil.validateTokenSign(requestData.getAccessToken(), _userEntity.getSalt());
+            //延长token时间24小时，只有用户在连续24小时不登录的情况下会需要重新登录
+            TokenUtil.expireToken(requestData.getClientId(), requestData.getUserId());
+            BUEnum bu = CommonUtil.validateBuId(requestData.getBuId());
+            log.info("各平台登录记录:{};本次需记录的是:{}", _userEntity.getLoginRec(), bu.getLoginPlatformCode());
+            if (!StringUtils.contains(_userEntity.getLoginRec(), bu.getLoginPlatformCode())) {
+                _userEntity.setLoginRec(StringUtils.isBlank(_userEntity.getLoginRec()) ? bu.getLoginPlatformCode() + "," : _userEntity.getLoginRec() + bu.getLoginPlatformCode() + ",");
+                amqpTemplate.convertAndSend("user_login_platform_record_queue_key", _userEntity); //异步通知使用rabbitmq
+                log.info("各平台登录记录完成:{}", _userEntity.getLoginRec());
+                BizUtil.updateUserCache(_userEntity);
+            }
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.DOME_USER_ID, _userEntity.getUserId());
+            data.put(UserCenterConstants.DOME_USER_NAME, _userEntity.getUserName());
+            String mobile = (StringUtils.isNotBlank(_userEntity.getMobile()) && !_userEntity.getMobile().startsWith("100") ? _userEntity.getMobile() : "");
+            data.put(UserCenterConstants.DOME_USER_MOBILE, mobile);
+            data.put(UserCenterConstants.DOME_USER_AVATAR, _userEntity.getAvatarUrl());
+            data.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(_userEntity.getAge() == null ? 0 : _userEntity.getAge()));
+            data.put(UserCenterConstants.DOME_USER_GENDER, _userEntity.getGender());
+            data.put(UserCenterConstants.DOME_USER_OPENID, StringUtils.isNotBlank(_userEntity.getOpenId()) ? _userEntity.getOpenId() : "");
+            data.put(UserCenterConstants.DOME_USER_THIIRDID, StringUtils.isNotBlank(_userEntity.getThirdId()) ? _userEntity.getThirdId() : "");
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + requestData.getAccessToken() + ",clientId=" + requestData.getClientId() + ",buId=" + requestData.getBuId(), e);
+        }
+    }
+
+    @RequestMapping("/logout")
+    @ResponseBody
+    public String logout(String accessToken, String clientId, String buId) {
+        try {
+            BUEnum buEnum = CommonUtil.validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && !BUEnum.isMobileGameBU(buId)) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            if (StringUtils.split(accessToken, "\\" + TokenUtil.TOKEN_SPLITER).length != 4) {
+                log.info("accessToken:{}", accessToken);
+                accessToken = TokenUtil.decryptToken(accessToken);
+            }
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, userId);
+            UserEntity userEntity = null;
+            if (StringUtils.isBlank(userValue) || ((userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null)) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            TokenUtil.validateTokenSign(accessToken, userEntity.getSalt());
+            String _clientId = BizUtil.distinguishPlatformOrGame(buEnum, clientId);
+            TokenUtil.destoryToken(_clientId, userId);
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException("accessToken=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+    @OperateType(bizType = BizType.getUserInfo)
+    @RequestMapping("/getUserById")
+    @ResponseBody
+    public String getUserInfoById(RequestData requestData) throws Exception {
+        if (StringUtils.isBlank(requestData.getUserId())) {
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_NULL));
+        }
+        String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+        UserEntity user = null;
+        if (StringUtils.isBlank(userValue) || (user = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+            log.error("缓存用户不存在,userId=" + requestData.getUserId());
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+        }
+        Map<String, String> data = new HashMap<String, String>();
+        data.put(UserCenterConstants.DOME_USER_NAME, user.getUserName());
+        String mobile = (StringUtils.isNotBlank(user.getMobile()) && !user.getMobile().startsWith("100") ? user.getMobile() : "");
+        data.put(UserCenterConstants.DOME_USER_MOBILE, mobile);
+        data.put(UserCenterConstants.DOME_USER_AVATAR, user.getAvatarUrl());
+        data.put(UserCenterConstants.DOME_USER_GENDER, user.getGender());
+        data.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(user.getAge() == null ? 0 : user.getAge()));
+        data.put(UserCenterConstants.DOME_USER_OPENID, StringUtils.isNotBlank(user.getOpenId()) ? user.getOpenId() : "");
+        data.put(UserCenterConstants.DOME_USER_THIIRDID, StringUtils.isNotBlank(user.getThirdId()) ? user.getThirdId() : "");
+        return JSONObject.toJSONString(buildResponse(data));
+    }
+
+    @RequestMapping("/getUserByIds")
+    @ResponseBody
+    public String getUserInfoByIds(String userIds, HttpServletRequest request) throws Exception {
+        if (StringUtils.isBlank(userIds)) {
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_NULL));
+        }
+        Map<String, Map<String, String>> data = new HashMap<String, Map<String, String>>();
+        String[] ids = userIds.split(",");
+        List<String> userList = RedisUtil.hmget(RedisContant.USER_BASIC_IDX, ids);
+        if (CollectionUtils.isEmpty(userList))
+            return JSONObject.toJSONString(buildResponse(data));
+        UserEntity userEntity = null;
+        Map<String, String> userMap = null;
+        for (String userInfo : userList) {
+            if (StringUtils.isEmpty(userInfo) || (userEntity = JSONObject.parseObject(userInfo, UserEntity.class)) == null)
+                continue;
+            userMap = new HashMap<String, String>();
+            userMap.put(UserCenterConstants.DOME_USER_NAME, userEntity.getUserName());
+            userMap.put(UserCenterConstants.DOME_USER_MOBILE, userEntity.getMobile());
+            userMap.put(UserCenterConstants.DOME_USER_AVATAR, userEntity.getAvatarUrl());
+            userMap.put(UserCenterConstants.DOME_USER_GENDER, userEntity.getGender());
+            userMap.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(userEntity.getAge() == null ? 0 : userEntity.getAge()));
+            userMap.put(UserCenterConstants.DOME_USER_OPENID, StringUtils.isNotBlank(userEntity.getOpenId()) ? userEntity.getOpenId() : "");
+            userMap.put(UserCenterConstants.DOME_USER_THIIRDID, StringUtils.isNotBlank(userEntity.getThirdId()) ? userEntity.getThirdId() : "");
+            data.put(userEntity.getUserId(), userMap);
+        }
+        return JSONObject.toJSONString(buildResponse(data));
+    }
+
+    /**
+     * 根据手机或邮箱获取UserId
+     */
+    @RequestMapping("/getUserByPassport")
+    @ResponseBody
+    public String getUserByPassport(@RequestParam(defaultValue = "86") String countryCode, String passport) {
+        try {
+            PassportType type = validatePassport(countryCode, passport);
+            Map<String, String> data = new HashMap<String, String>();
+            UserEntity _userEntity = null;
+            String userInfo = null;
+            switch (type) {
+                case email:
+                    userInfo = RedisUtil.hget(RedisContant.EMAIL_BASIC_IDX, passport);
+                    break;
+                case mobile:
+                    userInfo = RedisUtil.hget(RedisContant.MOBILE_BASIC_IDX, passport);
+                    break;
+            }
+            if (StringUtils.isBlank(userInfo) || (_userEntity = JSONObject.parseObject(userInfo, UserEntity.class)) == null) {
+                log.error("缓存用户不存在mobile=" + passport);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            data.put(UserCenterConstants.DOME_USER_ID, _userEntity.getUserId());
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("passport=" + passport, e);
+        }
+    }
+
+    /**
+     * 性别随机用户接口
+     *
+     * @param gender
+     * @param request
+     * @return 不改
+     */
+    @RequestMapping("/getRandomUserByGender")
+    @ResponseBody
+    public String getRandomUserByGender(@RequestParam("gender") String gender, HttpServletRequest request) {
+        try {
+            GenderEnum genderEnum = GenderEnum.getFromKey(gender);
+            String contraryGender = "";
+            if (GenderEnum.N == genderEnum || GenderEnum.M == genderEnum) {
+                contraryGender = GenderEnum.F.name();
+            } else {
+                contraryGender = GenderEnum.M.name();
+            }
+            UserDetailEntity userDetail = userDetailService.queryRandomUserByGender(contraryGender);
+            UserBasicEntity userBasic = userBasicService.queryById(userDetail.getUserId());
+            Map<String, String> map = new HashMap<String, String>();
+            map.put(UserCenterConstants.DOME_USER_ID, userBasic.getUserId());
+            map.put(UserCenterConstants.DOME_USER_NAME, userBasic.getUserName());
+            map.put(UserCenterConstants.DOME_USER_MOBILE, userBasic.getMobile());
+            map.put(UserCenterConstants.DOME_USER_AVATAR, userDetail.getAvatar());
+            map.put(UserCenterConstants.DOME_USER_GENDER, userDetail.getGender());
+            map.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(userDetail.getAge()));
+            return JSONObject.toJSONString(buildResponse(map));
+        } catch (Exception e) {
+            return handleException("gender=" + gender, e);
+        }
+    }
+}

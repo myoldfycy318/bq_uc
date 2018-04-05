@@ -1,0 +1,233 @@
+package com.qbao.store.entity.user;
+
+import java.util.Date;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：niuzan
+ *  创建时间	：2016年4月12日 上午11:17:01 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月12日 上午11:17:01 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public class UserDetailEntity
+{
+	/**
+	 * 用户id
+	 */
+	private String userId;
+	
+	/**
+	 * 年龄
+	 */
+	private Integer age;
+	
+	/**
+     * 性别
+     */
+    private String gender;
+    
+    /**
+     * 个人简介
+     */
+    private String profile;
+    
+    /**
+     * 用户头像
+     */
+    private String avatar;
+    
+    /**
+     * 生日
+     */
+    private Date birthday;
+    
+    /**
+     * 收货地址-省份
+     */
+    private String province;
+    
+    /**
+     * 收货地址-城市
+     */
+    private String city;
+    
+    /**
+     * 收货地址-区域
+     */
+    private String district;
+    
+    /**
+     * 收货地址-街道
+     */
+    private String street;
+    
+    /**
+     * 收货地址-详细地址
+     */
+    private String addressDetail;
+    
+    /**
+     * 保留字段，是否允许第三方修改用户信息
+     */
+    private String allowThirdModify;
+    
+    /**
+     * 创建时间
+     */
+    private Date createTime;
+    
+    /**
+     * 更新时间
+     */
+    private Date updateTime;
+    
+    /**
+     * qq号码
+     */
+    private String qqNo;
+
+	public UserDetailEntity() 
+	{
+		
+	}
+
+	public UserDetailEntity(String userId) {
+		super();
+		this.userId = userId;
+	}
+
+	public String getUserId() {
+		return userId;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	public Integer getAge() {
+		return age;
+	}
+
+	public void setAge(Integer age) {
+		this.age = age;
+	}
+
+	public String getGender() {
+		return gender;
+	}
+
+	public void setGender(String gender) {
+		this.gender = gender;
+	}
+
+	public String getProfile() {
+		return profile;
+	}
+
+	public void setProfile(String profile) {
+		this.profile = profile;
+	}
+
+	public String getAvatar() {
+		return avatar;
+	}
+
+	public void setAvatar(String avatar) {
+		this.avatar = avatar;
+	}
+
+	public Date getBirthday() {
+		return birthday;
+	}
+
+	public void setBirthday(Date birthday) {
+		this.birthday = birthday;
+	}
+
+	public String getProvince() {
+		return province;
+	}
+
+	public void setProvince(String province) {
+		this.province = province;
+	}
+
+	public String getCity() {
+		return city;
+	}
+
+	public void setCity(String city) {
+		this.city = city;
+	}
+
+	public String getDistrict() {
+		return district;
+	}
+
+	public void setDistrict(String district) {
+		this.district = district;
+	}
+
+	public String getStreet() {
+		return street;
+	}
+
+	public void setStreet(String street) {
+		this.street = street;
+	}
+
+	public String getAddressDetail() {
+		return addressDetail;
+	}
+
+	public void setAddressDetail(String addressDetail) {
+		this.addressDetail = addressDetail;
+	}
+
+	public String getAllowThirdModify() {
+		return allowThirdModify;
+	}
+
+	public void setAllowThirdModify(String allowThirdModify) {
+		this.allowThirdModify = allowThirdModify;
+	}
+
+	public Date getCreateTime() {
+		return createTime;
+	}
+
+	public void setCreateTime(Date createTime) {
+		this.createTime = createTime;
+	}
+
+	public Date getUpdateTime() {
+		return updateTime;
+	}
+
+	public void setUpdateTime(Date updateTime) {
+		this.updateTime = updateTime;
+	}
+	
+	public String getQqNo() {
+		return qqNo;
+	}
+	
+	public void setQqNo(String qqNo) {
+		this.qqNo = qqNo;
+	}
+
+	@Override
+	public String toString() {
+		return "UserDetailEntity [userId=" + userId + ", age=" + age + ", gender=" + gender + ", profile=" + profile
+				+ ", avatar=" + avatar + ", birthday=" + birthday + ", province=" + province + ", city=" + city
+				+ ", district=" + district + ", street=" + street + ", addressDetail=" + addressDetail
+				+ ", allowThirdModify=" + allowThirdModify + ", createTime=" + createTime + ", updateTime=" + updateTime
+				+ "]";
+	}
+    
+}

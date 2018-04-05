@@ -1,0 +1,9 @@
+###MySQL\u6570\u636E\u6E90\u914D\u7F6E
+mysql.url=jdbc:mysql://192.168.7.79/store?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull
+mysql.username=root
+mysql.password=123456
+
+
+#mysql.url=jdbc:mysql://192.168.7.225/store_test?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull
+#mysql.username=root
+#mysql.password=123456

@@ -1,0 +1,106 @@
+package com.qbao.store.controller.v2;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.RedisContant;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.bqiong.usercenter.util.pbkdf2.Pbkdf2Util;
+import com.qbao.store.controller.IBaseController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.service.UserService;
+import com.qbao.store.util.BizUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 实名认证
+ * <p>
+ * Created by hunsy on 2017/6/1.
+ */
+@Controller
+@RequestMapping(value = "v2/idcard")
+public class V2UserCardController extends IBaseController {
+
+    @Autowired
+    private UserService userService;
+
+    /**
+     * 实名认证
+     * <p>
+     * buId        Buid
+     * clientId    clientId
+     * name        姓名
+     * card        身份证号
+     * accessToken AccessToken
+     *
+     * @return
+     */
+    @OperateType(bizType = BizType.idcard)
+    @RequestMapping(value = "attestation", method = RequestMethod.POST)
+    @ResponseBody
+    public String attestation(RequestData requestData) {
+        try {
+             validateBuId(requestData.getBuId());
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            BizUtil.validateClientId(requestData);
+            String[] dbTblIdx = requestData.getDbTblIdx().split("-");
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            UserEntity _userEntity = null;
+            if (StringUtils.isBlank(userValue) || (_userEntity = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                logger.error("用户不存在Redis userId{}", requestData.getUserId());
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            if (StringUtils.isNotBlank(_userEntity.getIdCardNo())) {
+                logger.error("用户已经通过验证->userId:{}", requestData.getUserId());
+                throw new BizException(ErrorCode.IDCARD_CHECKED.getCode());
+            }
+            //验证姓名
+            validateNameInner(requestData.getName());
+            //验证身份证号
+            validateCardInner(requestData.getCard());
+
+            _userEntity.setIdCardNo(requestData.getCard());
+            _userEntity.setIdCardName(requestData.getName());
+            UserEntity newUserEntity = new UserEntity.Builder().idCardName(_userEntity.getIdCardName()).idCardNo(_userEntity.getIdCardNo()).build();
+            if (!userService.updateUserById(dbTblIdx[1], dbTblIdx[2], newUserEntity)) {
+                logger.error("用户实名认证失败 -->userId:{},认证信息user{}", requestData.getUserId(), JSONObject.toJSONString(_userEntity));
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            //更新缓存信息
+            if (StringUtils.isNotBlank(_userEntity.getMobile()) && !_userEntity.getMobile().startsWith("100")) {
+                RedisUtil.hset(RedisContant.MOBILE_BASIC_IDX, _userEntity.getMobile(), JSONObject.toJSONString(_userEntity));
+            }
+            if (StringUtils.isNotBlank(_userEntity.getEmail())) {
+                RedisUtil.hset(RedisContant.EMAIL_BASIC_IDX, _userEntity.getEmail(), JSONObject.toJSONString(_userEntity));
+            }
+            if (StringUtils.isNotBlank(_userEntity.getImsi())){
+                RedisUtil.hset(RedisContant.IMSI_BAISC_IDX, _userEntity.getImsi(), JSONObject.toJSONString(_userEntity));
+            }
+            RedisUtil.hset(RedisContant.USER_BASIC_IDX, _userEntity.getUserId(), JSONObject.toJSONString(_userEntity));
+            Map<String, Object> map = new HashMap<>();
+            map.put("checked", true);
+            return JSONObject.toJSONString(BaseResponse.success(map));
+        } catch (Exception e) {
+            return handleException(e);
+        }
+    }
+
+
+    public static void main(String[] args) {
+        System.out.println(Pbkdf2Util.encrypt("123456", "v1NpOJkb5P747ch9h08Bvd8kzO8XPkHQ"));
+
+    }
+
+}

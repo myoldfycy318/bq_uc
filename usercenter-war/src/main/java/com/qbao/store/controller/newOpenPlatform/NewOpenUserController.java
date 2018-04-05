@@ -1,0 +1,78 @@
+package com.qbao.store.controller.newOpenPlatform;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.RedisContant;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.util.TokenUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Created by ym on 2017/10/10.
+ */
+@Controller
+@RequestMapping("/newOpen")
+public class NewOpenUserController extends BaseController {
+    @OperateType(bizType = BizType.getUserInfo)
+    @RequestMapping("/getByToken")
+    @ResponseBody
+    public String getByToken(RequestData requestData, HttpServletRequest request) {
+        try {
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, requestData.getUserId());
+            UserEntity user = null;
+            if (StringUtils.isBlank(userValue) || (user = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                log.error("用户不存在");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            log.info("查询所得用户信息user=" + JSONObject.toJSONString(user));
+
+            TokenUtil.validateTokenSign(requestData.getAccessToken(), user.getSalt());
+            //延长token时间24小时，只有用户在连续24小时不登录的情况下会需要重新登录
+            TokenUtil.expireToken(UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, requestData.getUserId());
+
+            Map<String, String> data = new HashMap<String, String>();
+            data.put("userId", user.getUserId());
+            data.put("userName", (StringUtils.isNotBlank(user.getMobile()) && !user.getMobile().startsWith("100")) ? user.getMobile() : user.getEmail());
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + requestData.getAccessToken() + ",clientId=" + UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, e);
+        }
+    }
+
+    @RequestMapping("/logout")
+    @ResponseBody
+    public String logout(String accessToken, HttpServletRequest request) {
+        try {
+            accessToken = TokenUtil.decryptToken(accessToken);
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            String userValue = RedisUtil.hget(RedisContant.USER_BASIC_IDX, userId);
+            UserEntity user = null;
+            if (StringUtils.isBlank(userValue) || (user = JSONObject.parseObject(userValue, UserEntity.class)) == null) {
+                log.error("用户查询不存在,登出失败！");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            log.info("查询所得用户信息user=" + user);
+
+            TokenUtil.validateTokenSign(accessToken, user.getSalt());
+            TokenUtil.destoryToken(UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, userId);
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, e);
+        }
+    }
+}

@@ -1,0 +1,194 @@
+package com.qbao.store.util;
+
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.util.IPUtil;
+import com.qbao.store.entity.log.UserOperationLogEntity;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserEntity;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.Date;
+
+/**
+ * **********************************************************
+ * 内容摘要	：<p>
+ * <p/>
+ * 作者	：94841
+ * 创建时间	：2016年6月29日 下午4:28:52
+ * 当前版本号：v1.0
+ * 历史记录	:
+ * 日期	: 2016年6月29日 下午4:28:52 	修改人：niuzan
+ * 描述	:
+ * **********************************************************
+ */
+public class UserCenterContext {
+    private static ThreadLocal<UserOperationLogEntity> logEntitycontext = new ThreadLocal<UserOperationLogEntity>();
+
+
+    private static ThreadLocal<RequestData> requestContext = new ThreadLocal<RequestData>();
+
+    private static ThreadLocal<String> dataSourceThreadLocal = new ThreadLocal<String>();
+
+
+    private static final Logger log = LoggerFactory.getLogger(UserCenterContext.class);
+
+
+    public static void setDataSource(String dataSource) {
+        dataSourceThreadLocal.set(dataSource);
+    }
+
+    public static String getDataSource() {
+        return dataSourceThreadLocal.get();
+    }
+
+    /**
+     * 函数名称 : setUserOperationLogEntity
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param entity 修改记录：
+     *               日期 ：2016年7月6日 下午2:33:04	修改人：
+     *               描述	：
+     */
+    public static void setUserOperationLogEntity(UserOperationLogEntity entity) {
+        logEntitycontext.set(null);
+        logEntitycontext.set(entity);
+    }
+
+    /**
+     * 函数名称 : setRequestData
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @param requestData 修改记录：
+     *                    日期 ：2016年8月6日 下午2:33:04	修改人：
+     *                    描述	：
+     */
+    public static void setRequestData(RequestData requestData) {
+        requestContext.set(null);
+        requestContext.set(requestData);
+    }
+
+    /**
+     * 函数名称 : getReqestData
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @return 修改记录：
+     * 日期 ：2016年7月6日 下午2:33:11	修改人：
+     * 描述	：
+     */
+    public static RequestData getReqestData() {
+        return requestContext.get();
+    }
+
+    /**
+     * 函数名称 : getUserOperationLogEntity
+     * 功能描述 :
+     * 参数及返回值说明：
+     *
+     * @return 修改记录：
+     * 日期 ：2016年7月6日 下午2:33:11	修改人：
+     * 描述	：
+     */
+    public static UserOperationLogEntity getUserOperationLogEntity() {
+        return logEntitycontext.get();
+    }
+
+    public static void buildUserBasicInfo2LogEntity(UserBasicEntity entity) {
+        log.info("开始组装日志实体用户基本信息！");
+        getUserOperationLogEntity().setUserId(entity.getUserId());
+        getUserOperationLogEntity().setUserName(entity.getUserName());
+        getUserOperationLogEntity().setMobile(entity.getMobile());
+        getUserOperationLogEntity().setCountryCode(entity.getCountryCode());
+        getUserOperationLogEntity().setEmail(entity.getEmail());
+    }
+    public static void buildUserBasicInfo2LogEntity(UserEntity entity) {
+        log.info("开始组装日志实体用户基本信息！");
+        getUserOperationLogEntity().setUserId(entity.getUserId());
+        getUserOperationLogEntity().setUserName(entity.getUserName());
+        getUserOperationLogEntity().setMobile(entity.getMobile());
+        getUserOperationLogEntity().setCountryCode(entity.getCountryCode());
+        getUserOperationLogEntity().setEmail(entity.getEmail());
+    }
+
+    public static void buildCommonInfo4HadoopLogEntity(HttpServletRequest request) {
+        String openId = "null";
+        String channelId = request.getParameter(UserCenterConstants.CHANNEL_ID);
+        String userIp = IPUtil.getIpAddr(request);
+        String buId = request.getParameter(UserCenterConstants.BU_ID);
+        String clientId = request.getParameter(UserCenterConstants.CLIENT_ID);
+        BizType bizType = RequestDataHelper.getBizTypeByUri4Hadoop(StringUtils.substringBeforeLast(request.getRequestURI(), "."));
+        ThirdPartyEnum thirdEnum = RequestDataHelper.getThirdPartyFromUri(StringUtils.substringBeforeLast(request.getRequestURI(), "."));
+        //如果是第三方登录，手机号码在登录成功后获得，否则从请求中拿
+        //该步骤在finally中，所以如果是第三方的话，这个时候mobile已经不为空了。
+        if (thirdEnum != null) {
+            switch (thirdEnum) {
+                case QBAO:
+                    openId = request.getParameter(RequestDataHelper.QBAO_UID);
+                    break;
+                default:
+                    break;
+            }
+        }
+        //passport登录
+        else {
+            String tmpPassport = request.getParameter(UserCenterConstants.PASSPORT);
+            String passport = StringUtils.isBlank(tmpPassport) ? request.getParameter(UserCenterConstants.MOBILE) : tmpPassport;
+            String countryCode = request.getParameter("countryCode");
+
+            PassportType type = PassportType.validatePassport(countryCode, passport);
+            if (PassportType.mobile == type) getUserOperationLogEntity().setMobile(passport);
+            if (PassportType.email == type) getUserOperationLogEntity().setEmail(passport);
+        }
+
+        getUserOperationLogEntity().setOpenId(openId);
+        getUserOperationLogEntity().setChannelId(channelId);
+        getUserOperationLogEntity().setUserIp(userIp);
+        getUserOperationLogEntity().setBuId(buId);
+        getUserOperationLogEntity().setClientId(StringUtils.isBlank(clientId) ? buId : clientId);
+        getUserOperationLogEntity().setOperationType(bizType.getBizType());
+        getUserOperationLogEntity().setThirdId(thirdEnum == null ? RequestDataHelper.DEF_NOTHIRDPARTY_LOGIN : thirdEnum.getThirdId());
+        getUserOperationLogEntity().setOperationTime(new Date());
+    }
+
+    public static void buildRequestData(HttpServletRequest request) {
+        String userIp = IPUtil.getIpAddr(request);
+        String appVersion = request.getParameter(UserCenterConstants.APP_VERSION);
+        String mobile = request.getParameter(UserCenterConstants.DOME_USER_MOBILE);
+        String passport = request.getParameter(UserCenterConstants.PASSPORT);
+        String buId = request.getParameter(UserCenterConstants.BU_ID);
+        String clientId = request.getParameter(UserCenterConstants.CLIENT_ID);
+        String captchaKey = request.getParameter(RiskConstants.CAPTCHA_KEY);
+        String uri = request.getRequestURI();
+        String captcha = request.getParameter(RiskConstants.CAPTCHA);
+        getReqestData().setCaptcha(captcha);
+        getReqestData().setUri(uri);
+        getReqestData().setOperateType(RequestDataHelper.getBizTypeByUri4Risk(uri));
+        getReqestData().setUri(StringUtils.substringBeforeLast(request.getRequestURI(), "."));
+        getReqestData().setAppVersion(appVersion);
+        getReqestData().setMobile(StringUtils.isNotBlank(passport) ? passport : mobile);
+        getReqestData().setUserIp(userIp);
+        getReqestData().setBuId(buId);
+        getReqestData().setClientId(StringUtils.isBlank(clientId) ? buId : clientId);
+        getReqestData().setCaptchaKey(captchaKey);
+        getReqestData().setOperationTime(new Date());
+        getReqestData().setCountryCode(request.getParameter("countryCode"));
+
+        getReqestData().setChannelId(request.getParameter("channelId"));
+        getReqestData().setMobileCode(request.getParameter("mobileCode"));
+        getReqestData().setPassword(request.getParameter("password"));
+        getReqestData().setUserName(request.getParameter("userName"));
+        getReqestData().setAvatarUrl(request.getParameter("avatarUrl"));
+        getReqestData().setGender(request.getParameter("gender"));
+        getReqestData().setPassport(request.getParameter("passport"));
+        getReqestData().setEmailCode(request.getParameter("emailCode"));
+
+        getReqestData().setEmail(request.getParameter(UserCenterConstants.EMAIL));
+        getReqestData().setPassport(passport);
+    }
+}

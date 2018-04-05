@@ -1,0 +1,137 @@
+/**
+ *
+ */
+package com.qbao.store.controller.thirdpart.qbao;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.CommonUtil;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.bqiong.usercenter.util.SpringBeanProxy;
+import com.bqiong.usercenter.util.aes.AESCoder;
+import com.qbao.store.controller.thirdpart.ThirdLoginByPasswordController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.provider.QbaoCasAuthenticationProvider;
+import com.qbao.store.service.thirdpart.QbaoUserService;
+import com.qbao.store.util.ApiConnector;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+
+@Controller
+@RequestMapping("/qbao")
+public class AppLogin {
+
+    Logger logger = LoggerFactory.getLogger(AppLogin.class);
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+    @Resource(name = "qbaoUserService")
+    private QbaoUserService qbaoUserService;
+    @Autowired
+    private ThirdLoginByPasswordController thirdLoginByPasswordController;
+
+    /**
+     * 供钱宝app客户端传递st调起
+     *
+     * @return
+     */
+    @RequestMapping(value = "/account4Client/login")
+    @ResponseBody
+    public String login(HttpServletRequest request) {
+        try {
+            if (StringUtils.isBlank(request.getParameter("st")) || StringUtils.isBlank(request.getParameter("buId"))
+                    || StringUtils.isBlank(request.getParameter("domain")))
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+            UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken("_cas_stateful_", request.getParameter("st"));
+            Map<String, String> map = new HashMap<String, String>();
+            map.put("appClientService", "https://" + request.getParameter("domain") + "/j_spring_cas_security_check");
+            map.put("buId", request.getParameter("buId"));
+            map.put("channelCode", request.getParameter("channelCode"));
+            map.put("platformType", request.getParameter("platformType"));
+            authenticationToken.setDetails(map);
+            QbaoCasAuthenticationProvider casAuthenticationProvider = SpringBeanProxy.getBean(QbaoCasAuthenticationProvider.class, "casAuthenticationProvider");
+            Authentication authentication = casAuthenticationProvider.authenticate(authenticationToken);
+            return authentication == null ? JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION)) : (String) authentication.getPrincipal();
+        } catch (Exception e) {
+            logger.error("从钱宝客户端获取用户信息异常，请求参数:{}", JSONObject.toJSONString(request.getParameterMap()), e);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        }
+    }
+
+
+    /**
+     * 钱宝username登录
+     *
+     * @param request
+     * @return
+     */
+    @RequestMapping(value = "/unLogin")
+    public String unLogin(HttpServletRequest request) {
+        try {
+            if (StringUtils.isBlank(request.getParameter("userName")) || StringUtils.isBlank(request.getParameter("buId")))
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+            List<NameValuePair> paramsList = new ArrayList<NameValuePair>();
+            paramsList.add(new BasicNameValuePair("userName", request.getParameter("userName")));
+            paramsList.add(new BasicNameValuePair("appId", propertiesUtil.getString("qbao.user.uc.appid")));
+            String url = propertiesUtil.getString("qbao.user.by.username.url");
+            String response = ApiConnector.post(url, paramsList);
+            JSONObject jsonObject = null;
+            logger.info("根据userName获取钱宝用户userid,请求url:{},请求参数：{},响应报文：{}", url, com.alibaba.fastjson.JSONObject.toJSONString(paramsList), response);
+            if (StringUtils.isBlank(response) || (jsonObject = com.alibaba.fastjson.JSONObject.parseObject(response)) == null
+                    || 1 != jsonObject.getInteger("code") || StringUtils.isBlank(jsonObject.getString("data"))) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            String qbUserId = jsonObject.getString("data");
+            StringBuilder sb = new StringBuilder("forward:/qbao/login").append("?");
+            sb.append("qbaoUid").append("=").append(qbUserId);
+            sb.append("&").append("userName").append("=").append("qb_").append(request.getParameter("userName"));
+            return sb.toString();
+        } catch (Exception e) {
+            logger.error("从钱宝客户端获取用户信息异常，请求参数:{}", JSONObject.toJSONString(request.getParameterMap()), e);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        }
+    }
+
+
+    /**
+     * 钱宝账户密码登录
+     *
+     * @param requestData
+     * @return
+     */
+    @RequestMapping(value = "/account/login")
+    @ResponseBody
+    public String login(RequestData requestData) {
+        CommonUtil.validateBuId(requestData.getBuId());
+        if (StringUtils.isBlank(requestData.getPassport()) || StringUtils.isBlank(requestData.getPassword()))
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_NULL));
+        try {
+            requestData.setPassword(AESCoder.getDecryptResult(requestData.getPassword(), propertiesUtil.getString("uc.aes.salt")));
+            BaseResponse baseResponse = qbaoUserService.qbaoAccountLogin(requestData);
+            if (!BaseResponse.isSuccess(baseResponse)) return JSONObject.toJSONString(baseResponse);
+            requestData.setUserName("qb_" + requestData.getUserName());
+            return thirdLoginByPasswordController.login(requestData);
+        } catch (Exception e) {
+            logger.error("钱宝账户密码登录异常，请求参数:{}", JSONObject.toJSONString(requestData), e);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        }
+    }
+
+}

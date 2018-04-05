@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:task="http://www.springframework.org/schema/task" xmlns:context="http://www.springframework.org/schema/context"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+    http://www.springframework.org/schema/task  http://www.springframework.org/schema/task/spring-task-3.1.xsd 
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd" 
+    default-lazy-init="true">
+    
+   <!--  <task:annotation-driven/> -->
+    
+
+    <bean id="collectLogs" class="com.dome.logcollector.job.CollectLogsJob">
+    </bean>
+    <task:scheduled-tasks>   
+        <task:scheduled ref="collectLogs" method="execute" cron="0 0/2 * * * ?"/>   
+    </task:scheduled-tasks>  
+  
+        <context:component-scan base-package="com.dome.logcollector.job"/>
+    
+    <!-- 
+    <bean id="collectLogs" class="com.dome.logcollector.job.CollectLogsJob">
+    </bean>
+
+    <bean id="collectLogsJob" class="org.springframework.scheduling.quartz.MethodInvokingJobDetailFactoryBean">
+        <property name="targetObject" ref="collectLogs" />
+        <property name="targetMethod" value="execute" />
+        <property name="concurrent" value="false" />
+    </bean>
+    
+     <bean id="collectLogsJobCronTrigger" class="org.springframework.scheduling.quartz.CronTriggerFactoryBean">
+        <property name="jobDetail" ref="collectLogsJob" />
+        <property name="cronExpression" value="0 30 0 * * ?" /> 
+        <property name="cronExpression" value="0 0/2 * * * ?" />
+    </bean>
+    
+    
+    <bean class="org.springframework.scheduling.quartz.SchedulerFactoryBean">
+        <property name="triggers">
+            <list>
+                 <ref bean="collectLogsJobCronTrigger"/>
+            </list>
+         </property> 
+     </bean>
+    -->
+</beans>

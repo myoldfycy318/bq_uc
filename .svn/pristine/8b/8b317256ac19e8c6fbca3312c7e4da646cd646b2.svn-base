@@ -1,0 +1,129 @@
+package com.bqiong.usercenter.constants;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.bqiong.usercenter.exception.BizException;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月15日 上午10:19:58 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月15日 上午10:19:58 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public enum PassportType 
+{
+	mobile, email;
+	
+	public static final PassportType getFromKey(String passport) 
+	{
+        for (PassportType e : PassportType.values())
+        {
+            if (e.toString().equals(passport))
+            {
+                return e;
+            }
+        }
+        return null;
+    }
+	
+	/**
+	 * 
+	 *  函数名称 : validatePassport
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param passport
+	 *  	@throws Exception
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年5月9日 下午4:07:04	修改人：  
+	 *  	描述	：
+	 *
+	 */
+	public static PassportType validatePassport(String countryCode,String passport)
+	{
+		PassportType type = null;
+		if(countryCode == null || !countryCode.equals("86")){
+			type = PassportType.getPassportType(passport);
+		}else{
+			type = PassportType.getPassportTypeForInner(passport);
+		}
+		return type;
+	}
+	
+	/**
+	 * 
+	 *  函数名称 : getPassportType
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param passport
+	 *  	@return
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月15日 上午11:29:42	修改人：  niuzan
+	 *  	描述	：根据passport获取passport类型
+	 *
+	 */
+	public static PassportType getPassportType(String passport)
+	{
+//		String regMobile = "^[1][3-8]\\d{9}$|^([5|6|9])\\d{7}$|^[0][9]\\d{8}$|^[6]([8|6])\\d{5}$";
+		String regMobile = "^[1][3-8]\\d{9}$";
+		String regEmail = "^\\s*\\w+(?:\\.{0,1}[\\w-]+)*@[a-zA-Z0-9]+(?:[-.][a-zA-Z0-9]+)*\\.[a-zA-Z]+\\s*$";
+		String regEmail4Pubish = "^.*@.*$";
+		
+		if(passport.matches(regMobile))
+		{
+			return PassportType.mobile;
+		}
+		String otherMobile = "^[0-9]*$";
+		if(passport.matches(otherMobile))
+		{
+			return PassportType.mobile;
+		}
+		if(passport.indexOf("100") != -1 && passport.length() == 11)
+		{
+			return PassportType.mobile;
+		}
+		if(passport.matches(regEmail) || passport.matches(regEmail4Pubish))
+		{
+			return PassportType.email;
+		}
+		return null;
+	}
+	
+	
+	public static PassportType getPassportTypeForInner(String passport)
+	{
+//		String regMobile = "^[1][3-8]\\d{9}$|^([5|6|9])\\d{7}$|^[0][9]\\d{8}$|^[6]([8|6])\\d{5}$";
+		String regMobile = "^[1][3-8]\\d{9}$";
+		String regEmail = "^\\s*\\w+(?:\\.{0,1}[\\w-]+)*@[a-zA-Z0-9]+(?:[-.][a-zA-Z0-9]+)*\\.[a-zA-Z]+\\s*$";
+		String regEmail4Pubish = "^.*@.*$";
+		
+		if(passport.matches(regMobile))
+		{
+			return PassportType.mobile;
+		}
+		if(passport.indexOf("100") != -1 && passport.length() == 11)
+		{
+			return PassportType.mobile;
+		}
+		if(passport.matches(regEmail) || passport.matches(regEmail4Pubish))
+		{
+			return PassportType.email;
+		}
+		return null;
+	}
+	
+	
+	
+	public static void main(String[] args) {
+		String email = "1@126.com";
+		System.out.println(getPassportType(email));
+	}
+	
+}

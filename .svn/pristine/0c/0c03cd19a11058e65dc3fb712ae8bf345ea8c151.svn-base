@@ -1,0 +1,146 @@
+package com.qbao.store.controller.thirdpart;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.LoginTypeEnum;
+import com.bqiong.usercenter.constants.ThirdConstants;
+import com.bqiong.usercenter.constants.ThirdPartyEnum;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.thirdpart.BindEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.thirdpart.BindService;
+import com.qbao.store.util.CommonUtil;
+import com.qbao.store.util.UserCenterContext;
+
+@Controller
+@RequestMapping("/qbao")
+public class ThirdLoginByPasswordController extends BaseController
+{
+	@Autowired
+	private UserBasicService userBasicService;
+	
+	@Autowired
+	BindService bindService;
+	
+	@Autowired
+	RegisterService registerService;
+	
+	@RequestMapping("/login")
+    @ResponseBody
+    public String login(String qbaoUid, String clientId, String buId, String channelId, HttpServletRequest request)
+    {
+		try 
+		{
+		    if(StringUtils.isBlank(qbaoUid))
+		    {
+		        log.error("钱宝id为空！");
+		        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+		    }
+			validateBuId(buId);
+			//请求来源是app_store时候，没有clientid，使用buId标识
+			if(StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK)
+			{
+				clientId = buId;
+			}
+			else
+			{
+				validateClientId(clientId);
+			}
+			UserBasicEntity entity = null;
+			BindEntity bindEntity = bindService.queryByThird(ThirdPartyEnum.QBAO.getThirdId(), qbaoUid);
+			log.info("查询关系表返回实体entity=" + bindEntity);
+			
+			if(bindEntity == null)
+			{
+			    String mobile = ThirdConstants.DEF_THIRD_MOBILE_PREFIX + RandomStringUtil.getRandomMobileSuffix();
+			    String password = ThirdConstants.DEF_THIRD_PASSWORD;
+			    entity = registerService.register(null, mobile, password, null, buId, null, channelId);
+			    BindEntity buildEntity = CommonUtil.buildBindEntity(ThirdPartyEnum.QBAO.getThirdId(), qbaoUid, entity.getUserId(), UserCenterConstants.NORMAL);
+			    bindService.bind(buildEntity);
+			}
+			else
+			{
+			    entity = userBasicService.queryById(bindEntity.getUserId());
+			}
+			
+			if(entity == null)
+			{
+			    log.error("用户信息异常或状态异常！entity=" + entity);
+			    throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode());
+			}
+			if(entity.getStatus() != UserCenterConstants.NORMAL)
+			{
+				log.info("user status is abnormal！entity=" + entity);
+				throw new BizException(ErrorCode.USER_STATUS_INVALID.getCode());
+			}
+			
+			UserCenterContext.buildUserBasicInfo2LogEntity(entity);
+			String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());
+			RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.thirdpart.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+			Map<String, String> data = new HashMap<String, String>();
+			data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+			return JSONObject.toJSONString(buildResponse(data));
+		
+		}catch (Exception e)
+		{
+			return handleException("qbaoUid=" + qbaoUid + ",clientId=" + clientId+",buId="+buId, e);
+		}
+    }
+	
+	@RequestMapping("/getThirdId")
+    @ResponseBody
+    public String getThirdIdByDomeId(String thirdpart, String domeId, HttpServletRequest request)
+    {
+		try 
+		{
+		    if(StringUtils.isBlank(domeId) || StringUtils.isBlank(thirdpart))
+		    {
+		        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+		    }
+		    ThirdPartyEnum thirdEnum = ThirdPartyEnum.getFromName(thirdpart);
+		    if(thirdEnum == null)
+		    {
+		    	return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+		    }
+			BindEntity bindEntity = bindService.queryByDomeId(thirdEnum.getThirdId(), domeId);
+			log.info("查询关系表返回实体entity=" + bindEntity);
+			
+			Map<String, String> map = new HashMap<>();
+			if(bindEntity == null)
+			{
+				map.put(ThirdConstants.IS_BIND, "false");
+			    return JSONObject.toJSONString(buildResponse(map));
+			}
+			else
+			{
+				map.put(ThirdConstants.IS_BIND, "true");
+				map.put(ThirdConstants.QBAO_UID, bindEntity.getOpenId());
+			    return JSONObject.toJSONString(buildResponse(map));
+			}
+			
+		}catch (Exception e)
+		{
+			return handleException("", e);
+		}
+    }
+	
+}

@@ -1,0 +1,113 @@
+package com.qbao.store.manage;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.util.CollectionUtils;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.RiskConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.init.InitEntity;
+import com.qbao.store.service.InitService;
+import com.qbao.store.util.InitConstants;
+
+@Controller
+@RequestMapping("/manage")
+public class ManagerController extends BaseController
+{
+	@Autowired
+	private InitService initService;
+	
+	@Autowired
+	private InitConstants initConstants; 
+	
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	@ResponseBody
+	@RequestMapping("/addOrUpdate")
+	public String addOrUpdate4Captcha(String buId, String captchaSwitch, Integer limitCount, HttpServletRequest request, HttpServletResponse response)
+	{
+		try
+		{
+			if(StringUtils.isBlank(captchaSwitch) || StringUtils.isBlank(buId))
+			{
+				return JSONObject.toJSONString(BaseResponse.fail("1004", "有必填参数为空"));
+			}
+			validateBuId(buId);
+			Map result = new HashMap<>();
+			//修改
+			List<InitEntity> switchEntityList = initService.query(RiskConstants.CAPTCHA_SWITCH, buId);
+			if(CollectionUtils.isEmpty(switchEntityList))
+			{
+				return JSONObject.toJSONString(BaseResponse.fail("1004", "记录不存在"));
+			}
+			InitEntity switchEntity = new InitEntity();
+			switchEntity.setName(RiskConstants.CAPTCHA_SWITCH);
+			switchEntity.setBuId(buId);
+			switchEntity.setValue(captchaSwitch);
+			initService.modify(switchEntity);
+			
+			if(limitCount != null)
+			{
+				List<InitEntity> limitCountEntityList = initService.query(RiskConstants.CAPTCHA_LIMIT_COUNT, buId);
+				if(CollectionUtils.isEmpty(limitCountEntityList))
+				{
+					return JSONObject.toJSONString(BaseResponse.fail("1004", "记录不存在"));
+				}
+				InitEntity limitCountEntity = new InitEntity();
+				limitCountEntity.setName(RiskConstants.CAPTCHA_LIMIT_COUNT);
+				limitCountEntity.setBuId(buId);
+				limitCountEntity.setValue(String.valueOf(limitCount));
+				initService.modify(limitCountEntity);
+			}
+			initConstants.load();
+			result.put("responseCode", 1000);
+			result.put("errorMsg", "");
+			return JSONObject.toJSONString(result);
+		} catch (Exception e) {
+			return JSONObject.toJSONString(BaseResponse.fail("1005", "系统异常"));
+		}
+	}
+
+	
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	@ResponseBody
+	@RequestMapping("/query")
+	public String query(String name, String buId, HttpServletRequest request, HttpServletResponse response)
+	{
+		try 
+		{
+			validateBuId(buId);
+			Map result = new HashMap<>();
+			List<InitEntity> entityList = initService.query(name, buId);
+			Map<String, String> map = new HashMap<String, String>();
+			for(InitEntity entity : entityList)
+			{
+				if(RiskConstants.CAPTCHA_SWITCH.equals(entity.getName()))
+				{
+					map.put(RiskConstants.CAPTCHA_SWITCH, entity.getValue());
+				}
+				if(RiskConstants.CAPTCHA_LIMIT_COUNT.equals(entity.getName()))
+				{
+					map.put(RiskConstants.CAPTCHA_LIMIT_COUNT, entity.getValue());
+				}
+			}
+			result.put("responseCode", 1000);
+			result.put("errorMsg", "");
+			result.put("data", map);
+			return JSONObject.toJSONString(result);
+		} catch (Exception e) {
+			return JSONObject.toJSONString(BaseResponse.fail("1005", "系统异常"));
+		}
+	}
+}

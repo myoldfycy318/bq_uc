@@ -1,0 +1,406 @@
+package com.bqiong.usercenter.constants;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月12日 下午5:54:34 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月12日 下午5:54:34 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public interface UserCenterConstants 
+{
+	/**
+	 * 日志表前缀
+	 */
+	public static final String LOG_PREFIX = "user_operation_log_";
+	
+	/**
+	 * 索引手机表前缀
+	 */
+	public static final String INDEX_MOBILE_PREFIX = "user_index_mobile_";
+	
+	/**
+	 * 索引邮箱表前缀
+	 */
+	public static final String INDEX_EMAIL_PREFIX = "user_index_email";
+	
+	/**
+	 * 基本表前缀
+	 */
+	public static final String USER_BASIC_PREFIX = "user_basic_";
+	
+	/**
+	 * 详细表前缀
+	 */
+	public static final String USER_DETAIL_PREFIX = "user_detail_";
+	
+	/**
+	 * 用户注册附加信息表前缀
+	 */
+	public static final String USER_REGISTER_EXTRA_PREFIX = "user_register_extra_";
+	
+	/**
+	 * 实际表邮箱表前缀-----这个用不到的，直接将数据同步到basic表中，根据email找到userid后根据userid找到对应的表
+	 */
+	public static final String USER_EMAIL_PREFIX = "user_basic_email_";
+	
+	/**
+	 * 分表因数
+	 */
+	public static final int SHARD_NUMBER = 100;
+	
+	/**
+	 * extra表的分表因数
+	 */
+	public static final int SHARD_NUMBER_4_EXTRA = 10;
+	
+	/**
+	 * 分表后缀长度
+	 */
+	public static final int TABLE_SUFFIX_LENGTH = 2;
+	/**
+	 * 返回accesstoken常量
+	 */
+	public static final String ACCESS_TOKEN = "accessToken";
+	
+	/**
+	 * sdk分配给第三方的唯一id
+	 */
+	public static final String CLIENT_ID = "clientId";
+	
+	/**
+	 * sdk对应的bu，不同的业务组
+	 */
+	public static final String BU_ID = "buId";
+	
+	//手机号码参数
+	public static final String MOBILE = "mobile";
+	
+	//渠道号参数标识
+	public static final String CHANNEL_ID = "channelId";
+	
+	/**
+	 * 手机验证码mobilecode
+	 */
+	public static final String MOBILE_CODE = "mobileCode";
+	
+	/**
+	 * 用户装态-正常
+	 */
+	public static final int NORMAL = 0;
+	
+	/**
+	 * 用户装态-锁定
+	 */
+	public static final int LOCK = 1;
+	
+	/**
+	 * 用户token在缓存中的失效时间
+	 */
+	public static final int TOKEN_EXPIRE_TIME = 15 * 24 * 60 * 60;
+	
+	/**
+	 * clientInfo在缓存中的存活时间
+	 */
+	public static final int CLIENTINFO_EXPIRE_TIME = 24 * 60 * 60;
+	
+	/**
+	 * BU在缓存中的存活时间
+	 */
+	public static final int BUINFO_EXPIRE_TIME = 24 * 60 * 60;
+
+	/**
+	 * 数据库序列表中对应user_id字段的常量（不要修改）
+	 */
+	public static final String USER_ID = "user_id";
+	
+	/**
+	 * 数据库中序列表对应open_user_id字段的常量（不要修改）
+	 */
+	public static final String OPEN_USER_ID = "open_user_id"; 
+	
+	/**
+	 * passport常量
+	 */
+	public static final String PASSPORT = "passport";
+	
+	/**
+	 * passportType常量
+	 */
+	public static final String PASSPORT_TYPE = "passportType";
+
+	/**
+	 * 冰穹uid前缀标识
+	 */
+	public static final String BQ_PREFIX = "bq_";
+	
+	/**
+	 * 冰穹开放平台用户uid前缀标识
+	 */
+	public static final String OPEN_PREFIX = "open_";
+
+	/**
+	 * 序列最终长度
+	 */
+	public static final int SEQUENCE_LENGHT = 9;
+	
+	/**
+	 * 返回码标识
+	 */
+	public static final String CODE = "code";
+	
+	/**
+	 * 返回message标识
+	 */
+	public static final String MESSAGE = "message";
+	
+	/**
+	 * 密码最小长度
+	 */
+	public static final int PASSWORD_MIN_LENGTH = 6;
+	
+	/**
+	 * 密码最大长度
+	 */
+	public static final int PASSWORD_MAX_LENGTH = 16;
+	
+	/**
+	 * 密码允许出现的字符
+	 */
+	public static final String PASSWORD_ALLOW_CHAR = "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!|@#$%^&*()_-+=.:'<>?/~`";
+	
+	/**
+	 * 昵称正则表达式
+	 */
+	public static final String USERNAME_REGEX =	"^[\\u4e00-\\u9fa5_a-zA-Z0-9-]{1,16}$";
+	
+	/**
+	 * redis缓存中应用前缀，已经废弃
+	 */
+	//public static final String REDIS_KEY_PREFIX_APPLICATION = "usercenter_";
+	
+	/**
+	 * redis缓存中应用前缀：
+	 */
+	public static final String REDIS_USERCENTER_APPLICATION = "uc:";
+	
+	/**
+	 * redis缓存中tokenkey前缀
+	 */
+	public static final String REDIS_TOKEN_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "token:";
+	
+	/**
+	 * redis缓存中client信息key前缀
+	 */
+	public static final String REDIS_CLIENTINFO_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "clientInfo:";
+	
+	/**
+	 *redis缓存中sms前缀 
+	 */
+	public static final String REIDS_SMS_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "sms:";
+	
+	/**
+	 * redis缓存中存储短信下发时间
+	 */
+	public static final String REDIS_SMS_EXPIRE_PREFIX = REIDS_SMS_KEY_PREFIX + "expire:";
+	
+	/**
+	 *redis缓存中sms前缀 
+	 */
+	public static final String REIDS_SMS_TOKEN_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "smsToken:";
+	
+	/**
+	 *redis缓存中email前缀 
+	 */
+	public static final String REIDS_EMAIL_TOKEN_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "emailToken:";
+	
+	/**
+	 * redis缓存中bu前缀
+	 */
+	public static final String REDIS_BUINFO_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "buInfo:";
+
+	/**
+	 * clientId所在位置
+	 */
+	public static final int CLIENT_ID_POSITION = 0;
+
+	/**
+	 * passportType所在位置，参见tokenUtil类中token格式
+	 */
+	public static final int PASSPORT_TYPE_POSITION = 1;
+	
+	/**
+	 * 用户id所在位置，参见tokenUtil类中token格式
+	 */
+	public static final int USERID_POSITION = 1;
+	
+	/**
+	 * token延长时间
+	 */
+	public static final int EXTEND_TIME = 30 * 60;
+	
+	/**
+	 * 成功验证手机验证码后生成临时验证码等待二次验证
+	 */
+	public static final int SMS_EMAIL_TOKEN_TIME = 2 * 60;
+	
+	/**
+	 * 开放平台的bu_id标识
+	 */
+	public static final String OPEN_PLATFORM_BUID = "BQ004";
+	
+	/**
+	 * 邮箱未验证
+	 */
+	public static final int EMAIL_STATUS_NOT_VERIFY = 1;
+	
+	/**
+	 * 邮箱已验证
+	 */
+	public static final int EMAIL_STATUS_HAS_VERIFIED = 0;
+
+	/**
+	 * 验证码的token，开放平台手机邮箱都有用一个
+	 */
+	public static final String VERIFY_CODE_TOKEN = "verifyCodeToken";
+	
+	/**
+	 * 手机验证码的token，除开放平台外注册都是手机注册
+	 */
+	public static final String SMS_TOKEN = "smsToken";
+	
+	/**
+	 * 邮箱验证码的token，除开放平台外注册都是手机注册
+	 */
+	public static final String EMAIL_TOKEN = "emailToken";
+	
+	/**
+	 * 邮件服务器auth开关
+	 */
+	public static final String EMAIL_AUTH = "mail.smtp.auth";
+	
+	/**
+	 * 邮件服务器host
+	 */
+	public static final String EMAIL_HOST = "mail.smtp.host";
+	
+	/**
+	 * 邮件服务器发件人
+	 */
+	public static final String EMAIL_USER = "mail.user";
+	
+	/**
+	 * 邮件服务器发件人密码
+	 */
+	public static final String EMAIL_PASSWORD = "mail.password";
+
+	/**
+	 * 邮件预警收件人地址
+	 */
+	public static final String EMAIL_RECIPIENT = "mail.recipient";
+
+	
+	/**
+	 * 邮件验证码长度
+	 */
+	public static final int EMAIL_CODE_LENGTH = 6;
+	
+	/**
+	 * 邮件验证码redis中的key
+	 */
+	public static final String REDIS_EMAIL_CODE_KEY_PREFIX = REDIS_USERCENTER_APPLICATION + "emailCode:";
+	
+	/**
+	 * 邮件验证码过期时间 2017-6-13改邮箱验证码缓存为2小时
+	 */
+	public static final int EMAIL_CODE_EXPIRE_TIME = 60 * 60 * 2;
+	
+	/**
+	 * token_key常量标识
+	 */
+	public static final String TOKEN_KEY = "tokenKey";
+	
+	/**
+	 * 开放平台的系统默认clientId
+	 */
+	public static final String DEF_CLIENTID_4_OPEN_PLATFORM = "openPlatform";
+	
+	/******************************************对外返回的keys***************************************************/
+	/**
+	 * 冰穹用户id
+	 */
+	public static final String DOME_USER_ID = "domeUserId";
+	
+	/**
+	 * 冰穹用户昵称
+	 */
+	public static final String DOME_USER_NAME = "domeUserName";
+	
+	/**
+	 * 冰穹用户手机
+	 */
+	public static final String DOME_USER_MOBILE = "mobile";
+	
+	/**
+	 * 冰穹用户头像
+	 */
+	public static final String DOME_USER_AVATAR = "avatar";
+	
+	/**
+	 * 冰穹用户性别
+	 */
+	public static final String DOME_USER_GENDER = "gender";
+	
+	/**
+	 * 冰穹用户年龄
+	 */
+	public static final String DOME_USER_AGE = "age";
+
+	/**
+	 * 冰穹用户openId
+	 */
+	public static final String DOME_USER_OPENID = "openId";
+
+	/**
+	 * 冰穹用户third
+	 */
+	public static final String DOME_USER_THIIRDID = "thirdId";
+
+	
+	/**
+	 * app版本
+	 */
+	public static final String APP_VERSION = "appVersion";
+	
+	/**
+	 * 标识临时账号是否已经绑定过
+	 */
+	public static final String IS_BIND = "isBind";
+
+    //冰穹用户邮箱
+    String EMAIL ="email";
+	
+	/******************************************开放平台对外返回keys***************************************************/
+	public static final String IS_PASSPORT_EXIST = "isPassportExist";
+	
+	public static final String AUTH_RESULT = "authResult";
+	
+	/******************************************登录类型keys***************************************************/
+	public static final String REDIS_LOGIN_TYPE_PREFIX = REDIS_USERCENTER_APPLICATION + "loginType:";
+	
+	public static final String LOGIN_TYPE = "loginType";
+	
+	/**
+	 * 默认国别码
+	 */
+	public static final String DEFAULT_COUNTRY_CODE = "86";
+
+    //冰趣H5游戏宝玩渠道用户信息
+    String NEWWAPGAME_BW_USER_USERID = "newwapgame:bw:user:userid:";
+	
+}

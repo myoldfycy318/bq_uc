@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:task="http://www.springframework.org/schema/task" xmlns:context="http://www.springframework.org/schema/context"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+    http://www.springframework.org/schema/task  http://www.springframework.org/schema/task/spring-task-3.1.xsd 
+    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd" 
+    default-lazy-init="true">
+    
+    <task:annotation-driven/>
+    
+    <context:component-scan base-package="com.qbao.store.job"/>
+    
+    <bean id="collectLogs" class="com.qbao.store.job.CollectLogsJob">
+    </bean>
+
+    <bean id="collectLogsJob" class="org.springframework.scheduling.quartz.MethodInvokingJobDetailFactoryBean">
+        <property name="targetObject" ref="collectLogs" />
+        <property name="targetMethod" value="execute" />
+        <property name="concurrent" value="false" />
+    </bean>
+    
+     <bean id="collectLogsJobCronTrigger" class="org.springframework.scheduling.quartz.CronTriggerFactoryBean">
+        <property name="jobDetail" ref="collectLogsJob" />
+        <!-- 每天的0点30分执行
+        <property name="cronExpression" value="0 30 0 * * ?" /> -->
+        <!-- 测试每5分钟执行一次 -->
+        <property name="cronExpression" value="0 0/5 * * * ?" />
+    </bean>
+    
+    
+    <bean class="org.springframework.scheduling.quartz.SchedulerFactoryBean">
+        <property name="triggers">
+            <list>
+                 <ref bean="collectLogsJobCronTrigger"/>
+            </list>
+         </property> 
+     </bean>
+   
+</beans>

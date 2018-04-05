@@ -1,0 +1,62 @@
+package com.bqiong.usercenter.constants;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年5月17日 下午3:03:26 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年5月17日 下午3:03:26 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+public enum ThirdPartyEnum 
+{
+	QBAO("1"),
+	SINA("2"),
+	QQ("3"),
+	TOURIST("4"),
+	FACEBOOK("5");
+	
+	private String thirdId;
+	
+	private ThirdPartyEnum(String thirdId) 
+	{
+		this.thirdId = thirdId;
+	}
+	
+    public String getThirdId() {
+        return thirdId;
+    }
+
+    public void setThirdId(String thirdId) {
+        this.thirdId = thirdId;
+    }
+
+    public static final ThirdPartyEnum getFromKey(String thirdId) 
+	{
+        for (ThirdPartyEnum e : ThirdPartyEnum.values()) 
+        {
+            if (thirdId.equals(e.getThirdId()))
+            {
+                return e;
+            }
+        }
+        return null;
+    }
+    
+    public static final ThirdPartyEnum getFromName(String thirdpart) 
+	{
+        for (ThirdPartyEnum e : ThirdPartyEnum.values()) 
+        {
+            if (thirdpart.equalsIgnoreCase(e.name()))
+            {
+                return e;
+            }
+        }
+        return null;
+    }
+	
+}

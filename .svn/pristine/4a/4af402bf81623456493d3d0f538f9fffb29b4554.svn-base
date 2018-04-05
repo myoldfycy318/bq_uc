@@ -1,0 +1,419 @@
+package com.qbao.store.service.impl.risk;
+
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.service.risk.RiskService;
+import com.qbao.store.util.InitConstants;
+import com.qbao.store.util.NeedBuildErrorDataList;
+import com.qbao.store.util.UserCenterContext;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Service("riskService")
+public class RiskServiceImpl implements RiskService 
+{
+	private static final Logger log = LoggerFactory.getLogger(RiskServiceImpl.class);
+	
+	private String getCaptchaRiskCountKey()
+	{
+		return RiskConstants.REDIS_CAPTCHA_COUNT_KEY_PREFIX + UserCenterContext.getReqestData().getMobile() + 
+				":" + UserCenterContext.getReqestData().getBuId();
+	}
+	
+	private String getCaptchaRiskedKey()
+	{
+		return RiskConstants.REDIS_CAPTCHA_RISKED_PREFIX + UserCenterContext.getReqestData().getMobile() + 
+				":" + UserCenterContext.getReqestData().getBuId();
+	}
+	
+	private String getSmsRiskCountKey()
+	{
+		String countryCode = UserCenterContext.getReqestData().getCountryCode();
+		if (StringUtils.isBlank(countryCode)) {
+			countryCode = UserCenterConstants.DEFAULT_COUNTRY_CODE;
+		}
+		return RiskConstants.REDIS_SMS_COUNT_KEY + countryCode + UserCenterContext.getReqestData().getMobile();
+	}
+	
+	private String getSmsRiskedKey()
+	{
+
+		String countryCode = UserCenterContext.getReqestData().getCountryCode();
+		if (StringUtils.isBlank(countryCode)) {
+			countryCode = UserCenterConstants.DEFAULT_COUNTRY_CODE;
+		}
+		
+		return RiskConstants.REDIS_SMS_RISKED_KEY + countryCode + UserCenterContext.getReqestData().getMobile();
+	}
+
+	@Override
+	public Map<String, String> risk(ErrorCode errorCode) 
+	{
+		if(!isNeedBuildRiskData(errorCode))
+		{
+			return null;
+		}
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData().getBuId());
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		Map<String, String> map = new HashMap<String, String>();
+		String switchValue = "";
+		String mapKey = "";
+		String countKey = "";
+		boolean hasRisk = false;
+		boolean needRisk = false;
+		switch (bizType) {
+		case login:
+			switchValue = InitConstants.getValue(buEnum, RiskConstants.CAPTCHA_SWITCH);
+			mapKey = RiskConstants.NEED_CAPTCHA;
+			countKey = getCaptchaRiskCountKey();
+			hasRisk = getRiskedRecord().get(RiskConstants.NEED_CAPTCHA);
+			if(RiskConstants.SWITCH_OFF.equalsIgnoreCase(switchValue))
+			{
+				return null;
+			}
+			if(hasRisk)
+			{
+				map.put(mapKey, "true");
+				return map;
+			}
+			needRisk = increaseCount(countKey);
+			log.info("风控数量-> countKey:{}",countKey);
+			log.info("风控key->mapKey:{}",mapKey);
+			if (needRisk) {
+				createRiskedRecord();
+				map.put(mapKey, "true");
+			} else {
+				map.put(mapKey, "false");
+			}
+			return map;
+		case getCode:
+			switchValue = InitConstants.getValue(buEnum,
+					RiskConstants.SMS_SWITCH);
+			mapKey = RiskConstants.SMS_RISK_RESULT;
+			countKey = getSmsRiskCountKey();
+			hasRisk = getRiskedRecord().get(RiskConstants.SMS_RISK_RESULT);
+			needRisk = increaseCount(countKey);
+			if (needRisk) {
+				createRiskedRecord();
+			}
+			return null;
+		default:
+			break;
+		}
+		return null;
+	}
+
+	private boolean validateRiskRecordCondition(String captchaCountKey) {
+		int limitCount = 0;
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData()
+				.getBuId());
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		switch (bizType) {
+		case login:
+			limitCount = Integer.valueOf(InitConstants.getValue(buEnum,
+					RiskConstants.CAPTCHA_LIMIT_COUNT));
+			break;
+		case getCode:
+			limitCount = Integer.valueOf(InitConstants.getValue(buEnum,
+                    RiskConstants.SMS_LIMIT_COUNT));
+			break;
+		default:
+			break;
+		}
+		int hasRiskTime = Integer.parseInt(RedisUtil.hget(captchaCountKey,
+				RiskConstants.RECORD_COUNT));
+		log.info("当前操作业务类型为：" + bizType.name() + "已有风控次数：" + hasRiskTime);
+		if (hasRiskTime >= limitCount) {
+			return true;
+		}
+		return false;
+	}
+
+	private boolean increaseCount(String riskCountMap) {
+		int countInterval = 0;
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData()
+				.getBuId());
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		switch (bizType) {
+		case login:
+
+			countInterval = Integer.valueOf(InitConstants.getValue(buEnum,
+                    RiskConstants.CAPTCHA_COUNT_INTERVAL));
+			break;
+		case getCode:
+			countInterval = Integer.valueOf(InitConstants.getValue(buEnum,
+                    RiskConstants.SMS_COUNT_INTERVAL));
+			break;
+
+		default:
+			break;
+		}
+
+		Map<String, String> map = new HashMap<String, String>();
+		// 没有记录的时候生成记录并判断r记录生成条件
+		if (!RedisUtil.exists(riskCountMap)) {
+			map.put(RiskConstants.RECORD_COUNT, "1");
+			RedisUtil.hmset(riskCountMap, map);
+			RedisUtil.expire(riskCountMap, countInterval);
+			return validateRiskRecordCondition(riskCountMap);
+		}
+		RedisUtil.hincr(riskCountMap, RiskConstants.RECORD_COUNT);
+		// 判断是否满足r记录生成条件
+		return validateRiskRecordCondition(riskCountMap);
+	}
+
+	private void createRiskedRecord() {
+		String countMapKey = "";
+		String riskedMapKey = "";
+		int riskedInterval = 0;
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData()
+				.getBuId());
+		Map<String, String> map = new HashMap<String, String>();
+		switch (bizType) {
+		case login:
+			countMapKey = getCaptchaRiskCountKey();
+			riskedMapKey = getCaptchaRiskedKey();
+
+			riskedInterval = Integer.valueOf(InitConstants.getValue(buEnum,
+                    RiskConstants.CAPTCHA_RISKED_INTERVAL));
+			map.put(RiskConstants.NEED_CAPTCHA, "true");
+			break;
+		case getCode:
+			countMapKey = getSmsRiskCountKey();
+			riskedMapKey = getSmsRiskedKey();
+			riskedInterval = Integer.valueOf(InitConstants.getValue(buEnum,
+                    RiskConstants.SMS_RISKED_INTERVAL));
+			map.put(RiskConstants.SMS_RISK_RESULT, "true");
+			break;
+		default:
+			break;
+		}
+		RedisUtil.hmset(riskedMapKey, map);
+		RedisUtil.expire(riskedMapKey, riskedInterval);
+		RedisUtil.del(countMapKey);
+	}
+
+	@Override
+	public Map<String, Boolean> getRiskedRecord() {
+		String riskedMapKey = "";
+		String risked = "";
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		Map<String, Boolean> map = new HashMap<String, Boolean>();
+		switch (bizType) {
+		case login:
+			riskedMapKey = getCaptchaRiskedKey();
+			log.info("获取是否需要验证码的key->key:{}", riskedMapKey);
+			risked = RedisUtil.hget(riskedMapKey, RiskConstants.NEED_CAPTCHA);
+			map.put(RiskConstants.NEED_CAPTCHA, Boolean.parseBoolean(risked));
+			break;
+		case getCode:
+			riskedMapKey = getSmsRiskedKey();
+			risked = RedisUtil
+					.hget(riskedMapKey, RiskConstants.SMS_RISK_RESULT);
+			map.put(RiskConstants.SMS_RISK_RESULT, Boolean.parseBoolean(risked));
+			break;
+		default:
+			break;
+		}
+		return map;
+	}
+
+	private void clearCount() {
+		String key = getCaptchaRiskCountKey();
+		log.info("清除风控次数->key:{}", key);
+		RedisUtil.del(key);
+	}
+
+	@Override
+	public void clearRisk() {
+		log.info("清除风控");
+		clearCount();
+		// BUEnum buEnum =
+		// BUEnum.getFromKey(UserCenterContext.getReqestData().getBuId());
+		// String capthaSwitch = InitConstants.getValue(buEnum,
+		// RiskConstants.CAPTCHA_SWITCH, String.class);
+		// if(RiskConstants.SWITCH_ON.equalsIgnoreCase(capthaSwitch))
+		// {
+		String key = getCaptchaRiskedKey();
+		log.info("清除风控key->key:{}", key);
+		RedisUtil.del(getCaptchaRiskedKey());
+		// }
+	}
+
+	@Override
+	public void validateRisk() {
+		String captchaKey = UserCenterContext.getReqestData().getCaptchaKey();
+		String captcha = UserCenterContext.getReqestData().getCaptcha();
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData()
+				.getBuId());
+		if (bizType == null || buEnum == null) {
+			return;
+		}
+		switch (bizType) {
+		case login:
+		case modifyPassword:
+			if (isNeedRiskValidation()
+					|| (StringUtils.isNotBlank(captchaKey) && StringUtils
+							.isNotBlank(captcha))) {
+				if (StringUtils.isBlank(captchaKey)
+						|| StringUtils.isBlank(captcha)) {
+					throw new BizException(ErrorCode.CAPTCHA_NULL.getCode());
+				}
+				String capthaResultKey = RiskConstants.REDIS_CAPTCHA_KEY_PREFIX
+						+ captchaKey;
+				boolean exists = RedisUtil.hexists(capthaResultKey,
+						RiskConstants.RECORD_RESULT);
+				if (!exists) {
+					throw new BizException(ErrorCode.CAPTCHA_EXPIRED.getCode());
+				}
+				if (StringUtils.isBlank(captchaKey)) {
+					log.error("验证码key为空！!");
+					throw new BizException(ErrorCode.CAPTCHA_WRONG.getCode());
+				}
+				if (StringUtils.isBlank(captcha)) {
+					log.info("验证码为空！captchaKey=" + captchaKey);
+					throw new BizException(ErrorCode.CAPTCHA_NULL.getCode());
+				}
+				if (!StringUtils.isNumeric(captcha)) {
+					log.info("验证码为空！captchaKey=" + captchaKey);
+					throw new BizException(ErrorCode.CAPTCHA_WRONG.getCode());
+				}
+				String value = RedisUtil.hget(capthaResultKey,
+						RiskConstants.RECORD_RESULT);
+				RedisUtil.hdel(capthaResultKey, RiskConstants.RECORD_RESULT);
+				if (StringUtils.isBlank(value) || !StringUtils.isNumeric(value)) {
+					log.error("风控记录异常！风控结果值为空！capthaResultKey="
+							+ capthaResultKey);
+					return;
+				}
+				if (Integer.parseInt(value) != Integer.parseInt(captcha)) {
+					log.info("验证码错误！captchaKey=" + captchaKey + ",captcha="
+							+ captcha);
+					throw new BizException(ErrorCode.CAPTCHA_WRONG.getCode());
+				}
+			}
+			break;
+		case getCode:
+			if (isNeedRiskValidation()) {
+				throw new BizException(ErrorCode.SEND_SMS_LIMIT.getCode());
+			}
+		default:
+			return;
+		}
+	}
+
+	private boolean checkVersion(BUEnum buEnum) {
+		return BUEnum.DOME_SDK == buEnum
+				|| BUEnum.PUBLISH == buEnum
+				|| BUEnum.OVERSEASDK == buEnum
+				|| BUEnum.DOME_APP_STORE == buEnum
+				|| BUEnum.PASSPORT == buEnum
+				|| StringUtils.isNotBlank(UserCenterContext.getReqestData()
+						.getAppVersion());
+	}
+
+	/**
+	 * 
+	 * 函数名称 : isNeedBuildErrorData 功能描述 : 参数及返回值说明：
+	 * 
+	 * @param errorCode
+	 * @return
+	 *
+	 *         修改记录： 日期 ：2016年8月16日 上午11:26:38 修改人： 描述 ：返回时判断是否需要进行风控数据组装
+	 *
+	 */
+	@Override
+	public boolean isNeedBuildRiskData(ErrorCode errorCode) {
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData()
+				.getBuId());
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		boolean isNeedBuildVersion = checkVersion(buEnum);
+		String switchValue = "";
+		boolean isSwitchOn = false;
+		boolean isNeedBuildFailType = false;
+		if (bizType == null) {
+			return false;
+		}
+		switch (bizType) {
+		case login:
+		case modifyPassword:
+			switchValue = InitConstants.getValue(buEnum,
+					RiskConstants.CAPTCHA_SWITCH);
+			isNeedBuildFailType = NeedBuildErrorDataList
+					.isNeedBuildData(errorCode);
+			isSwitchOn = RiskConstants.SWITCH_ON.equalsIgnoreCase(switchValue);
+			if (isNeedBuildVersion && isSwitchOn && isNeedBuildFailType) {
+				return true;
+			} else {
+				return false;
+			}
+		case getCode:
+			switchValue = InitConstants.getValue(buEnum,
+					RiskConstants.SMS_SWITCH);
+			isNeedBuildFailType = NeedBuildErrorDataList
+					.isNeedBuildData(errorCode);
+			isSwitchOn = RiskConstants.SWITCH_ON.equalsIgnoreCase(switchValue);
+			if (isSwitchOn && isNeedBuildFailType) {
+				return true;
+			} else {
+				return false;
+			}
+		default:
+			return false;
+		}
+
+	}
+
+	/**
+	 * 
+	 * 函数名称 : isNeedRisk 功能描述 : 参数及返回值说明：
+	 * 
+	 * @return
+	 *
+	 *         修改记录： 日期 ：2016年8月16日 上午11:26:04 修改人： 描述 ：验证验证码之前调用该方法，确定是否需要验证验证码
+	 *
+	 */
+	@Override
+	public boolean isNeedRiskValidation() {
+		BUEnum buEnum = BUEnum.getFromKey(UserCenterContext.getReqestData()
+				.getBuId());
+		BizType bizType = UserCenterContext.getReqestData().getOperateType();
+		boolean isNeedBuildVersion = checkVersion(buEnum);
+		boolean isNeedRiskUri = RequestDataHelper
+				.isNeedRiskUri(UserCenterContext.getReqestData().getUri());
+		boolean isSwitchOn = false;
+		boolean risked = false;
+		switch (bizType) {
+		case login:
+			isSwitchOn = RiskConstants.SWITCH_ON.equalsIgnoreCase(InitConstants
+					.getValue(buEnum, RiskConstants.CAPTCHA_SWITCH));
+			risked = getRiskedRecord().get(RiskConstants.NEED_CAPTCHA) == true;
+			if (risked && isSwitchOn && isNeedRiskUri && isNeedBuildVersion) {
+				return true;
+			} else {
+				return false;
+			}
+		case getCode:
+			isSwitchOn = RiskConstants.SWITCH_ON.equalsIgnoreCase(InitConstants
+					.getValue(buEnum, RiskConstants.SMS_SWITCH));
+			risked = getRiskedRecord().get(RiskConstants.SMS_RISK_RESULT) == true;
+			if (risked && isSwitchOn && isNeedRiskUri) {
+				return true;
+			} else {
+				return false;
+			}
+
+		default:
+			return false;
+		}
+	}
+
+}

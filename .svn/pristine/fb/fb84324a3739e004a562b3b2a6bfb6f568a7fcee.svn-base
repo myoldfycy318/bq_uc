@@ -1,0 +1,87 @@
+package com.qbao.store.util;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.annotation.Resource;
+
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * 动态数据源切面处理代码,convention over configuration根据方法名前缀来选取主从数据源.
+ * NOTE-THAT: 目前应用市场事物做在service层级别,故数据源选择也
+ * 必须在service层级别,如果设置在DAO层机会出现多个连续DAO操作使用的
+ * 可能不是同一个数据源,照成事物失效.
+ * 该切面执行的顺序必须在所有切面执行之前.
+ * Author: yewenhai.
+ * Date: 15/12/2.
+ * Time: 下午5:10.
+ */
+public class DynamicDataSourceAspect {
+
+    private static final Logger log = LoggerFactory.getLogger(DynamicDataSourceAspect.class);
+
+    /***
+     * 非DML操作方法前缀
+     */
+    private static final List<String> READ_ONLY_PREFIX = new ArrayList<>();
+
+    static {
+        READ_ONLY_PREFIX.add("select");
+        READ_ONLY_PREFIX.add("query");
+        READ_ONLY_PREFIX.add("login");
+    }
+
+    /** 动态数据源选择器 **/
+    @Resource
+    private DynamicDataSourceSelector dynamicDataSourceSelector;
+
+    /**
+     * 环切数据库操作方法
+     * @param point 切点
+     * @return 方法返回结果
+     * @throws Throwable
+     */
+    public Object doAroundMethod(ProceedingJoinPoint point) throws Throwable
+    {
+        Object response = null;
+        String methodName = point.getSignature().getName();
+        log.debug("当前执行service层方法为: {}", methodName);
+        boolean isBinded = dynamicDataSourceSelector.isBinded();
+        try {
+            if(!isBinded) { //如果当前线程未绑定数据源,则选取数据源
+                if(isDMLOperation(methodName)) { // DML操作走主库
+                    dynamicDataSourceSelector.markMaster();
+                } else { // 非DML操作走从库
+                    dynamicDataSourceSelector.markSlave();
+                }
+            } else {
+                log.debug("当前线程已绑定数据源,不做数据源切换");
+            }
+            response = point.proceed();
+        } finally {
+            if(dynamicDataSourceSelector.isBinded()) { // 方法执行完毕,释放当前数据源
+                dynamicDataSourceSelector.remove();
+            }
+        }
+        return response;
+    }
+
+    /**
+     * 根据方法名判断是否有DML语句
+     * @param methodName
+     * @return true = 包含DML操作, false = 无DML操作
+     */
+    private boolean isDMLOperation(String methodName) {
+        boolean flag = true;
+        for (String prefix : READ_ONLY_PREFIX) {
+            if(methodName.startsWith(prefix)) {
+                flag = false;
+                break;
+            }
+        }
+        return flag;
+    }
+}

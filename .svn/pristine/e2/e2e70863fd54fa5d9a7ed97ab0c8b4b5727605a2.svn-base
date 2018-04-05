@@ -1,0 +1,50 @@
+package com.qbao.store.util;
+
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.exception.BizException;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import org.apache.commons.lang3.StringUtils;
+
+/**
+ * BizUtil
+ *
+ * @author Zhang ShanMin
+ * @date 2017/7/20
+ * @time 20:11
+ */
+public class BizUtil {
+
+    /**
+     * 账户是否绑定
+     *
+     * @param entity
+     * @return
+     */
+    public static boolean isBind4PassPort(UserEntity entity) {
+        if (StringUtils.isNotBlank(entity.getRegisterBy()) && "mobile".equals(entity.getRegisterBy()) && StringUtils.isNotBlank(entity.getMobile()) && !entity.getMobile().startsWith("100")) {
+            return true;
+        }
+        if (StringUtils.isNotBlank(entity.getRegisterBy()) && "email".equals(entity.getRegisterBy()) && StringUtils.isNotBlank(entity.getEmail())) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 验证clientId
+     * 请求来源是app_store时候，没有clientid，使用buId标识
+     * @param requestData
+     */
+    public static void validateClientId(RequestData requestData) {
+        if (StringUtils.isBlank(requestData.getClientId()) && BUEnum.getFromKey(requestData.getBuId()) != BUEnum.DOME_SDK) {
+            requestData.setClientId(requestData.getBuId());
+        } else {
+            if (StringUtils.isBlank(requestData.getClientId()))
+                throw new BizException(ErrorCode.USERID_ILLEGLE.getCode());
+        }
+    }
+
+
+}

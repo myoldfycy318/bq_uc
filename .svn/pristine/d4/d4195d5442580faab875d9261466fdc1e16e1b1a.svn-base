@@ -1,0 +1,380 @@
+package com.qbao.store.controller.user;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.GenderEnum;
+import com.bqiong.usercenter.constants.LoginTypeEnum;
+import com.bqiong.usercenter.constants.ThirdConstants;
+import com.bqiong.usercenter.constants.ThirdPartyEnum;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.index.MobileIndexEntity;
+import com.qbao.store.entity.thirdpart.BindEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.entity.user.UserCard;
+import com.qbao.store.entity.user.UserDetailEntity;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.UserCardService;
+import com.qbao.store.service.UserDetailService;
+import com.qbao.store.service.index.MobileIndexService;
+import com.qbao.store.service.thirdpart.BindService;
+import com.qbao.store.util.TokenUtil;
+
+@Controller
+@RequestMapping("/user")
+public class UserController extends BaseController {
+    @Autowired
+    private MobileIndexService mobileIndexService;
+
+    @Autowired
+    private UserBasicService userBasicService;
+
+    @Autowired
+    UserDetailService userDetailService;
+
+    @Autowired
+    private BindService bindService;
+
+    @Autowired
+    private UserCardService userCardService;
+
+    @RequestMapping("/getByToken")
+    @ResponseBody
+    public String getBasicByToken(String accessToken, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+
+            accessToken = TokenUtil.validateToken(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+
+            UserBasicEntity user = userBasicService.queryById(userId);
+            if (user == null) {
+                log.error("用户不存在");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            log.info("查询所得用户信息user=" + user);
+
+            TokenUtil.validateTokenSign(accessToken, user.getSalt());
+
+            //查询用户是否有钱宝账号的绑定,前端通过这个确定是否展示钱宝支付
+            String qbaoUid = "";
+            BindEntity bindEntity = bindService.queryByDomeId(ThirdPartyEnum.QBAO.getThirdId(), user.getUserId());
+            if (bindEntity != null && bindEntity.getStatus() == UserCenterConstants.NORMAL && ThirdPartyEnum.getFromKey(bindEntity.getThirdId()) == ThirdPartyEnum.QBAO) {
+                qbaoUid = bindEntity.getOpenId();
+            }
+            //延长token时间24小时，只有用户在连续24小时不登录的情况下会需要重新登录
+            TokenUtil.expireToken(clientId, userId);
+
+            Map<String, Object> data = new HashMap<String, Object>();
+            data.put(UserCenterConstants.DOME_USER_ID, user.getUserId());
+            data.put(UserCenterConstants.DOME_USER_NAME, user.getUserName());
+            data.put(UserCenterConstants.DOME_USER_MOBILE, user.getMobile());
+            data.put(ThirdConstants.QBAO_UID, qbaoUid);
+
+            //增加获取实名认证 --2017-06-12 hunsy
+            UserCard userCard = userCardService.findById(userId);
+            if (userCard != null) {
+                data.put("checked", userCard.getCard() != null);
+                data.put("card", userCard.getCard());
+            } else {
+                data.put("checked", false);
+                data.put("card", "");
+            }
+            //-----------2017-06-12 end-------------------
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+    @RequestMapping("/getLoginType")
+    @ResponseBody
+    public String getLoginType(String accessToken, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+
+            accessToken = TokenUtil.validateToken(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+
+            UserBasicEntity user = userBasicService.queryById(userId);
+            if (user == null) {
+                log.error("用户不存在");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            log.info("查询所得用户信息user=" + user);
+
+            TokenUtil.validateTokenSign(accessToken, user.getSalt());
+
+            //查询用户的登录类型
+            String loginType = RedisUtil.get(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken);
+            LoginTypeEnum type = LoginTypeEnum.getByName(loginType);
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.LOGIN_TYPE, type.name());
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+    @RequestMapping("/auth")
+    @ResponseBody
+    public String auth(String accessToken, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            Map<String, String> result = new HashMap<String, String>();
+
+            boolean flag = TokenUtil.validateTokenWithoutException(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+
+            if (!flag) {
+                result.put(UserCenterConstants.AUTH_RESULT, "false");
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+            accessToken = TokenUtil.decryptToken(accessToken);
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            UserBasicEntity user = userBasicService.queryById(userId);
+            if (user == null) {
+                log.error("当前token中解析用户不存在,解析出来的userId=" + userId);
+                result.put(UserCenterConstants.AUTH_RESULT, "false");
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+            boolean signFlag = TokenUtil.validateTokenSignWithoutException(accessToken, user.getSalt());
+            if (!signFlag) {
+                result.put(UserCenterConstants.AUTH_RESULT, "false");
+                return JSONObject.toJSONString(buildResponse(result));
+            }
+
+            result.put(UserCenterConstants.AUTH_RESULT, "true");
+            return JSONObject.toJSONString(buildResponse(result));
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+
+    @RequestMapping("/getDetailByToken")
+    @ResponseBody
+    public String getDetailByToken(String accessToken, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            accessToken = TokenUtil.validateToken(accessToken, clientId, isAESContent(BUEnum.getFromKey(buId)));
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            UserBasicEntity userBasic = userBasicService.queryById(userId);
+            if (userBasic == null) {
+                log.error("用户不存在!");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            log.info("查询所得用户基本信息userBasic=" + userBasic);
+
+            UserDetailEntity userDetail = userDetailService.queryById(userId);
+            if (userDetail == null) {
+                log.error("用户不存在,数据可能存在不一致！");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            log.info("查询所得用户信息userDetail=" + userDetail);
+
+            TokenUtil.validateTokenSign(accessToken, userBasic.getSalt());
+
+            //延长token时间24小时，只有用户在连续24小时不登录的情况下会需要重新登录
+            TokenUtil.expireToken(clientId, userId);
+
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.DOME_USER_ID, userBasic.getUserId());
+            data.put(UserCenterConstants.DOME_USER_NAME, userBasic.getUserName());
+            data.put(UserCenterConstants.DOME_USER_MOBILE, userBasic.getMobile());
+            data.put(UserCenterConstants.DOME_USER_AVATAR, userDetail.getAvatar());
+            data.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(userDetail.getAge()));
+            data.put(UserCenterConstants.DOME_USER_GENDER, userDetail.getGender());
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+    @RequestMapping("/logout")
+    @ResponseBody
+    public String logout(String accessToken, String clientId, String buId, HttpServletRequest request) {
+        try {
+            validateBuId(buId);
+            //请求来源是app_store时候，没有clientid，使用buId标识
+            if (StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK) {
+                clientId = buId;
+            } else {
+                validateClientId(clientId);
+            }
+            if (isAESContent(BUEnum.getFromKey(buId))) {
+                accessToken = TokenUtil.decryptToken(accessToken);
+            }
+            Map<String, String> tokenMap = TokenUtil.parseToken(accessToken);
+            String userId = tokenMap.get(UserCenterConstants.DOME_USER_ID);
+            UserBasicEntity user = userBasicService.queryById(userId);
+            if (user == null) {
+                log.error("用户查询不存在,登出失败！");
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            log.info("查询所得用户信息user=" + user);
+
+            //TokenUtil.validateTokenSign(accessToken, user.getSalt());//这里不校验用户的签名，因为可能多端登录，在其中一端修改描眉
+            TokenUtil.destoryToken(clientId, userId);
+            return JSONObject.toJSONString(BaseResponse.success());
+        } catch (Exception e) {
+            return handleException("token=" + accessToken + ",clientId=" + clientId + ",buId=" + buId, e);
+        }
+    }
+
+    @RequestMapping("/getUserById")
+    @ResponseBody
+    public String getUserInfoById(String userId, HttpServletRequest request) {
+        if (StringUtils.isBlank(userId)) {
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_NULL));
+        }
+        if (!StringUtils.isNumeric(StringUtils.substring(userId, userId.length() - 2))) {
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+        }
+        UserBasicEntity userBasic = userBasicService.queryById(userId);
+        if (userBasic == null) {
+            log.error("用户不存在!");
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+        }
+        log.info("查询所得用户基本信息userBasic=" + userBasic);
+
+        UserDetailEntity userDetail = userDetailService.queryById(userId);
+        if (userDetail == null) {
+            log.error("用户不存在,数据可能存在不一致！");
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+        }
+        log.info("查询所得用户信息userDetail=" + userDetail);
+
+        Map<String, String> data = new HashMap<String, String>();
+        data.put(UserCenterConstants.DOME_USER_NAME, userBasic.getUserName());
+        data.put(UserCenterConstants.DOME_USER_MOBILE, userBasic.getMobile());
+        data.put(UserCenterConstants.DOME_USER_AVATAR, userDetail.getAvatar());
+        data.put(UserCenterConstants.DOME_USER_GENDER, userDetail.getGender());
+        data.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(userDetail.getAge()));
+        return JSONObject.toJSONString(buildResponse(data));
+    }
+
+    @RequestMapping("/getUserByIds")
+    @ResponseBody
+    public String getUserInfoByIds(String userIds, HttpServletRequest request) {
+        if (StringUtils.isBlank(userIds)) {
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_NULL));
+        }
+
+        Map<String, Map<String, String>> data = new HashMap<String, Map<String, String>>();
+        String[] ids = userIds.split(",");
+        for (int i = 0; i < ids.length; i++) {
+            if (!StringUtils.isNumeric(StringUtils.substring(ids[i], ids[i].length() - 2))) {
+                continue;
+            }
+            Map<String, String> map = new HashMap<String, String>();
+            UserBasicEntity userBasic = userBasicService.queryById(ids[i]);
+            if (userBasic == null) {
+                log.info("用户不存在,userId=" + ids[i]);
+                continue;
+            }
+            log.info("查询所得用户基本信息userBasic=" + userBasic);
+
+            UserDetailEntity userDetail = userDetailService.queryById(ids[i]);
+            if (userDetail == null) {
+                log.error("用户不存在,数据可能存在不一致！userId=" + ids[i]);
+                continue;
+            }
+            log.info("查询所得用户信息userDetail=" + userDetail);
+            map.put(UserCenterConstants.DOME_USER_NAME, userBasic.getUserName());
+            map.put(UserCenterConstants.DOME_USER_MOBILE, userBasic.getMobile());
+            map.put(UserCenterConstants.DOME_USER_AVATAR, userDetail.getAvatar());
+            map.put(UserCenterConstants.DOME_USER_GENDER, userDetail.getGender());
+            map.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(userDetail.getAge()));
+            data.put(ids[i], map);
+        }
+
+        return JSONObject.toJSONString(buildResponse(data));
+    }
+
+    @RequestMapping("/getUserByPassport")
+    @ResponseBody
+    public String getUserByPassport(@RequestParam(defaultValue = "86") String countryCode, String passport, HttpServletRequest request) {
+        try {
+            validatePassport(countryCode, passport);
+            MobileIndexEntity mobileEntity = mobileIndexService.queryByMobile(countryCode, passport);
+            if (mobileEntity == null) {
+                log.error("用户不存在passport=" + passport);
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USER_NOT_EXIST));
+            }
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.DOME_USER_ID, mobileEntity.getUserId());
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException("passport=" + passport, e);
+        }
+    }
+
+    @RequestMapping("/getRandomUserByGender")
+    @ResponseBody
+    public String getRandomUserByGender(@RequestParam("gender") String gender, HttpServletRequest request) {
+        try {
+            GenderEnum genderEnum = GenderEnum.getFromKey(gender);
+            String contraryGender = "";
+            if (GenderEnum.N == genderEnum || GenderEnum.M == genderEnum) {
+                contraryGender = GenderEnum.F.name();
+            } else {
+                contraryGender = GenderEnum.M.name();
+            }
+            UserDetailEntity userDetail = userDetailService.queryRandomUserByGender(contraryGender);
+            UserBasicEntity userBasic = userBasicService.queryById(userDetail.getUserId());
+            Map<String, String> map = new HashMap<String, String>();
+            map.put(UserCenterConstants.DOME_USER_ID, userBasic.getUserId());
+            map.put(UserCenterConstants.DOME_USER_NAME, userBasic.getUserName());
+            map.put(UserCenterConstants.DOME_USER_MOBILE, userBasic.getMobile());
+            map.put(UserCenterConstants.DOME_USER_AVATAR, userDetail.getAvatar());
+            map.put(UserCenterConstants.DOME_USER_GENDER, userDetail.getGender());
+            map.put(UserCenterConstants.DOME_USER_AGE, String.valueOf(userDetail.getAge()));
+            return JSONObject.toJSONString(buildResponse(map));
+        } catch (Exception e) {
+            return handleException("gender=" + gender, e);
+        }
+    }
+}

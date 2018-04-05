@@ -1,0 +1,14 @@
+#\u67e5\u8be2\u7528\u6237\u89d2\u8272\u63a5\u53e3\u5730\u5740
+#common.user.url.role=http://user.qianbao666.com/api/get/userRole/{username}/new
+#\u67e5\u8be2\u7528\u6237\u4fe1\u606f\u63a5\u53e3\u5730\u5740
+#common.user.url.info=http://user.qianbao666.com/api/user/{username}/get
+#\u67e5\u8be2\u7528\u6237\u597d\u53cb\u5217\u8868
+#common.user.friend=http://user.qianbao666.com/api/getFriends
+#cc\u89c6\u9891\u5730\u5740
+#common.cc.videoUrl=http://spark.bokecc.com/api/video/playcode
+#common.qrcode.redirect=http://www.qbcdn.com/store/install/
+#common.qrcode.redirect=http://store.qbao.com/wap/qrcode/scan
+#qrcode.liantu.url=http://qr.liantu.com/api.php?text=
+#ccvideo
+#common.video.siteId=87ACA21FD20C9C52
+#download.switch=1

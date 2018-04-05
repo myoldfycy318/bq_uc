@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.index.MobileIndexMapper" >
+  <resultMap id="BaseResultMap" type="com.qbao.store.entity.index.MobileIndexEntity" >
+  	<result column="country_code" property="countryCode" jdbcType="VARCHAR" />
+    <result column="mobile" property="mobile" jdbcType="VARCHAR" />
+   	<result column="user_id" property="userId" jdbcType="VARCHAR" />
+  </resultMap>
+  <sql id="base_column_list" >
+   	country_code, mobile, user_id
+  </sql>
+  
+  <!-- 查询用户基本信息 -->
+  <select id="queryByMobile" resultMap="BaseResultMap" >
+    select 
+    <include refid="base_column_list" />
+    from ${tableName}
+    where mobile = #{mobile,jdbcType=VARCHAR} 
+    <if test="countryCode != null">
+    and country_code = #{countryCode, jdbcType=VARCHAR}
+    </if>
+  </select>
+  
+  <!-- 添加用户索引 -->
+  <insert id="insert" parameterType="com.qbao.store.entity.index.MobileIndexEntity" >
+    insert into ${tableName}
+    <trim prefix="(" suffix=")" suffixOverrides="," >
+    <if test="mobileIndexEntity.countryCode != null and mobileIndexEntity.countryCode != ''" >
+        country_code,
+     </if>
+     <if test="mobileIndexEntity.mobile != null and mobileIndexEntity.mobile != ''" >
+        mobile,
+     </if>
+     <if test="mobileIndexEntity.userId != null and mobileIndexEntity.userId != ''" >
+        user_id
+      </if>
+    </trim>
+    <trim prefix="values (" suffix=")" suffixOverrides="," >
+    <if test="mobileIndexEntity.countryCode != null and mobileIndexEntity.countryCode != ''" >
+        #{mobileIndexEntity.countryCode,jdbcType=VARCHAR},
+     </if>
+     <if test="mobileIndexEntity.mobile != null and mobileIndexEntity.mobile != ''" >
+        #{mobileIndexEntity.mobile,jdbcType=VARCHAR},
+      </if>
+      <if test="mobileIndexEntity.userId != null and mobileIndexEntity.userId != ''" >
+        #{mobileIndexEntity.userId,jdbcType=VARCHAR}
+      </if>
+    </trim>
+  </insert>
+  
+   <!-- 更新用户索引-->
+  <update id="updateMobile" parameterType="com.qbao.store.entity.index.MobileIndexEntity" >
+  	update ${tableName} 
+  	<set>
+  		country_code = #{mobileIndexEntity.countryCode},
+  		mobile = #{mobileIndexEntity.mobile}
+    </set>
+    where user_id = #{mobileIndexEntity.userId}
+  </update>
+  
+  <!-- 删除用户索引-->
+  <delete id="delete" parameterType="java.lang.String" >
+    delete from ${tableName} where user_id = #{userId}
+  </delete>
+</mapper>

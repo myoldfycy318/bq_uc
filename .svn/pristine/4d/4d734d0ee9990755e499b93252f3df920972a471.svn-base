@@ -1,0 +1,6 @@
+
+#\u5927\u8f6c\u76d8\u7ebf\u7a0b\u6c60
+#turntable.threadpool.es.coreSize=5
+#turntable.threadpool.es.maxPoolSize=5
+#turntable.threadpool.es.keepAliveTime=120
+#turntable.threadpool.es.queueSize=100

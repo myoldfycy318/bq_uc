@@ -1,0 +1,151 @@
+package com.qbao.store.util;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.sql.DataSource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
+
+import com.alibaba.druid.pool.DruidDataSource;
+
+/**
+ *
+ * AbstractRoutingDataSource整合多个数据源,每个{@link #getConnection()}方法
+ * 从数据源集合中通过{@link #determineCurrentLookupKey()}方法获取获取一个数据源
+ * 来获取数据库连接对象.
+ *
+ * Author: yewenhai.
+ * Date: 15/12/2.
+ * Time: 下午2:18.
+ * @See org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource
+ */
+public class DynamicDataSourceSelector extends AbstractRoutingDataSource{
+
+    private static final Logger log = LoggerFactory.getLogger(DynamicDataSourceSelector.class);
+
+    private static final ThreadLocal<String> HOLDER = new ThreadLocal<>();
+    /**
+     * 从库数据源
+     */
+    private Map<String, DataSource> slaveDataSources;
+
+    /**
+     * 主库数据源
+     */
+    private Map<String, DataSource> masterDataSources;
+
+    @Override
+    public void afterPropertiesSet() {
+    	String tempMasterUrl = ((DruidDataSource)masterDataSources.get("masterDataSource")).getUrl();
+    	String masterDataSourceUrl = tempMasterUrl.substring(tempMasterUrl.indexOf("//")+2, tempMasterUrl.lastIndexOf("/"));
+        log.info("开始向数据源路由器加载主从数据源......");
+        log.info("主数据源url="+masterDataSourceUrl);
+        Map<Object, Object> allDataSources = new HashMap<>();
+        allDataSources.putAll(masterDataSources);
+        if(null != slaveDataSources && 0 != slaveDataSources.size()) {
+            log.info("共有{}个从库数据源", slaveDataSources.size());
+            String tempSlaveUrl = ((DruidDataSource)slaveDataSources.get("slaveDataSource")).getUrl();
+        	String slaveDataSourceUrl = tempSlaveUrl.substring(tempSlaveUrl.indexOf("//")+2, tempSlaveUrl.lastIndexOf("/"));
+            log.info("从库地址为=" + slaveDataSourceUrl);
+            allDataSources.putAll(slaveDataSources);
+        }
+        log.info("主从数据源共计有{}个", allDataSources.size());
+        super.setTargetDataSources(allDataSources);
+        super.afterPropertiesSet();
+        log.info("数据源路由器加载数据源完毕.....");
+    }
+
+
+    /**
+     * 标记从库
+     */
+    public void markSlave() {
+        if(null != HOLDER.get()) {
+            throw new IllegalArgumentException("当前已有绑定的数据源,无法切换!");
+        }
+        HOLDER.set(this.getSlaveDataSource());
+    }
+
+    /**
+     * 标记主库
+     */
+    public void markMaster() {
+        HOLDER.set(this.getMasterDataSource());
+    }
+
+    /**
+     * 移除当前线程数据源
+     */
+    public void remove() {
+        HOLDER.remove();
+    }
+
+    /**
+     * 当前线程是否已经绑定指定数据源
+     * @return true = 已经绑定, false = 未绑定
+     */
+    public boolean isBinded() {
+
+        return HOLDER.get() != null;
+    }
+
+    /**
+     * 获取当前线程数据源
+     * @See org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource#determineCurrentLookupKey
+     * @return 返回当前线程数据源
+     */
+    @Override
+    protected Object determineCurrentLookupKey() {
+        return HOLDER.get();
+    }
+
+
+    /**
+     * 随机获取从库数据源,当数据源增加时,可以修改该方法采用相应的策略来获取数据源
+     * 如果没有配置从库,则默认取主库数据源.
+     * @return 从库数据源
+     */
+    private String getSlaveDataSource() {
+        // 无从库则取主库数据源
+        if(null == slaveDataSources || 0 == slaveDataSources.size()) 
+        {
+            return getMasterDataSource();
+        }
+        String slaveDataSourceKey = null;
+        for (Map.Entry<String, DataSource> entry: slaveDataSources.entrySet()) {
+            log.debug("选取从库{}为当前数据源", entry.getKey());
+            slaveDataSourceKey = entry.getKey();
+            break;
+        }
+
+        return slaveDataSourceKey;
+    }
+
+    /**
+     * 随机获取主库数据源,当数据源增加时,可以修改该方法采用相应的策略来获取数据源
+     * @return 主库数据源
+     */
+    private String getMasterDataSource() {
+        String masterDataSourceKey = null;
+        for (Map.Entry<String, DataSource> entry: masterDataSources.entrySet()) {
+            log.debug("选取主库{}为当前数据源", entry.getKey());
+            masterDataSourceKey = entry.getKey();
+            break;
+        }
+
+        return masterDataSourceKey;
+    }
+
+
+    public void setSlaveDataSources(Map<String, DataSource> slaveDataSources) {
+        this.slaveDataSources = slaveDataSources;
+    }
+
+    public void setMasterDataSources(Map<String, DataSource> masterDataSources) {
+        this.masterDataSources = masterDataSources;
+    }
+    
+}

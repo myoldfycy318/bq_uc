@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+">
+    <!-- cas认证器 -->
+    <bean id="casAuthenticationProvider"
+          class="com.qbao.store.provider.QbaoCasAuthenticationProvider">
+        <!-- ticket 校验器 -->
+        <property name="ticketValidator">
+            <bean class="org.jasig.cas.client.validation.Cas20ServiceTicketValidator">
+                <!-- cas服务器地址 -->
+                <constructor-arg index="0" value="${common.cas.serverUrlPrefix}"/>
+            </bean>
+        </property>
+        <!-- 完整性校验key值 -->
+        <property name="key" value="${common.cas.key}"/>
+        <property name="qBaoUserDetailUrl" value="${common.user.detail.url}"/>
+        <property name="qBaoUserIdUrl" value="${common.userid.url}"/>
+        <property name="qBaoAppId" value="${qbao.user.uc.appid}"/>
+    </bean>
+
+</beans>

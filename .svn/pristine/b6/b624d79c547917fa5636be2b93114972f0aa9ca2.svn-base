@@ -1,0 +1,215 @@
+package com.qbao.store.controller.thirdpart.thirdOauth;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.PropertiesUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.util.HttpUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.net.URLEncoder;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 微信第三方授权登录
+ * Created by admin on 2017/7/24.
+ */
+@Controller
+@RequestMapping("/thirdOauthLogin/weixin")
+public class WeiXinController extends BaseController {
+    private final static Logger logger = LoggerFactory.getLogger(WeiXinController.class);
+    @Autowired
+    private PropertiesUtil propertiesUtil;
+
+    /**
+     * pc端获取code方式
+     *
+     * @return
+     */
+    @RequestMapping("/authorize")
+    @ResponseBody
+    public void wxAuthorize(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            String url = propertiesUtil.getString("weixin.authorizeUrl").trim()
+                    + "?appid=" + propertiesUtil.getString("weixin.appId").trim()
+                    + "&redirect_uri=" + URLEncoder.encode(propertiesUtil.getString("weixin.redirectUrl").trim(), "UTF-8")
+                    + "&response_type=code&scope=snsapi_login&state=" + request.getParameter("buId")
+                    + "#wechat_redirect";
+            Map<String, String> data = new HashMap<String, String>();
+            data.put("url", url);
+            System.out.println("微信authorize sessionid=" + request.getSession().getId());
+            response.sendRedirect(url);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 微信公众号端获取code方式
+     *
+     * @return
+     */
+    @RequestMapping("/authorize_public")
+    @ResponseBody
+    public void wxPublicAuthorize(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            String[] strArr = request.getParameter("buId").split("-");
+            if (strArr.length < 6) {
+                logger.error("微信公众号获取code失败,参数不正确!");
+                throw new BizException(ErrorCode.SYSTEM_EXCEPTION.getCode(), "微信公众号获取code失败,参数不正确");
+            }
+            String url = propertiesUtil.getString("weixinpublic.authorizeUrl").trim()
+                    + "?appid=" + strArr[3].trim()
+                    + "&redirect_uri=" + URLEncoder.encode(propertiesUtil.getString("weixin.redirectUrl").trim(), "UTF-8")
+                    + "&response_type=code&scope=snsapi_userinfo&state=" + request.getParameter("buId")
+                    + "#wechat_redirect";
+            response.sendRedirect(url);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    /**
+     * 根据code获取accessToken,根据accessToken获取weibo UserInfo
+     * sex 普通用户性别，1为男性，2为女性
+     * 性别 M-男 F-女 N-保密
+     */
+    @RequestMapping("/login")
+    public void login(HttpServletRequest request, HttpServletResponse response) throws Exception {
+        System.out.println("微信 login sessionid=" + request.getSession().getId());
+        String code = request.getParameter("code");
+        String state = request.getParameter("state");
+        String[] strArr = state.split("-");
+        StringBuilder errorMsg = new StringBuilder(propertiesUtil.getString(strArr[0] + ".error.redirectUri").trim());
+        errorMsg.append("?");
+        if (StringUtils.isBlank(code)) {
+            logger.error("微信获取授权码失败!");
+            errorMsg.append("message").append("=").append("微信获取授权码失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String appId = strArr.length > 3 ? strArr[3] : null;
+        String secret = strArr.length > 3 ? strArr[4] : null;
+        String weixinToken = getWxAccessTokenByCode(code, appId, secret);
+        if (StringUtils.isBlank(weixinToken)) {
+            logger.error("微信获取accessToken失败!line:WeiXinController 106");
+            errorMsg.append("message").append("=").append("微信获取accessToken失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String userStr = getWxUserByOpenId(JSONObject.parseObject(weixinToken).getString("openid"), JSONObject.parseObject(weixinToken).getString("access_token"));
+        if (StringUtils.isBlank(userStr)) {
+            logger.error("微信获取用户信息失败!line:WeiXinController 112");
+            errorMsg.append("message").append("=").append("微信获取用户信息失败!");
+            response.sendRedirect(errorMsg.toString());
+        }
+        String unionid = StringUtils.isBlank(JSONObject.parseObject(weixinToken).getString("unionid"))
+                ? JSONObject.parseObject(weixinToken).getString("openid")
+                : JSONObject.parseObject(weixinToken).getString("unionid");
+        logger.info("unionid:{},openid:{}", JSONObject.parseObject(weixinToken).getString("unionid"), JSONObject.parseObject(weixinToken).getString("openid"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("/thirdOauthLogin/thirdLogin?");
+        sb.append("openId").append("=").append(unionid).append("&");
+        sb.append("userName").append("=").append(JSONObject.parseObject(userStr).getString("nickname")).append("&");
+        sb.append("avatarUrl").append("=").append(JSONObject.parseObject(userStr).getString("headimgurl")).append("&");
+        sb.append("gender").append("=").append(JSONObject.parseObject(userStr).getString("sex").equals("1") ? "M" : "F").append("&");
+        sb.append("thirdId").append("=").append("6").append("&");
+        sb.append("buId").append("=").append(strArr[0]).append("&");
+        sb.append("channelId").append("=").append(strArr[1]).append("&");
+        if (StringUtils.isNotBlank(appId) && StringUtils.isNotBlank(secret)) {
+            sb.append("wxOpenId").append("=").append(JSONObject.parseObject(weixinToken).getString("openid")).append("&");
+            sb.append("appId").append("=").append(appId).append("&");
+            sb.append("platformType").append("=").append(strArr[2]).append("&");
+            sb.append("app_code").append("=").append(strArr[5]).append("&");
+        }
+        sb.append("state").append("=").append(state);
+        request.getRequestDispatcher(sb.toString()).forward(request, response);
+    }
+
+    /**
+     * 刷新微信access_token有效期
+     * 1. 若access_token已超时，那么进行refresh_token会获取一个新的access_token，新的超时时间；
+     * 2. 若access_token未超时，那么进行refresh_token不会改变access_token，但超时时间会刷新，相当于续期access_token。
+     * refresh_token拥有较长的有效期（30天），当refresh_token失效的后，需要用户重新授权。
+     *
+     * @param refresh_token
+     * @return
+     */
+    public String refreshWxToken(String refresh_token) {
+        String url = propertiesUtil.getString("weixin.refreshTokenUrl").trim()
+                + "?appid=" + propertiesUtil.getString("weixin.appSercret").trim()
+                + "&grant_type=refresh_token"
+                + "&refresh_token=" + refresh_token;
+
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("errcode"))) {
+            logger.error("刷新微信access_token有效期失败!errcode:{};errmsg:{}", JSONObject.parseObject(backStr).getString("errcode"), JSONObject.parseObject(backStr).getString("errmsg"));
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        }
+        return backStr;
+    }
+
+    /**
+     * 微信 获取access_token
+     *
+     * @param code
+     * @return
+     */
+    @RequestMapping("/getWxAccessTokenByCode")
+    @ResponseBody
+    public String getWxAccessTokenByCode(String code, String appid, String secret) {
+        if (StringUtils.isBlank(appid) && StringUtils.isBlank(secret)) {
+            appid = propertiesUtil.getString("weixin.appId").trim();
+            secret = propertiesUtil.getString("weixin.appSercret").trim();
+        }
+        String url = propertiesUtil.getString("weixin.accessTokenUrl").trim()
+                + "?appid=" + appid
+                + "&secret=" + secret
+                + "&code=" + code
+                + "&grant_type=authorization_code";
+        logger.info("微信获取AccessToken,url:{}",url);
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("access_token"))) {
+            return backStr;
+        } else {
+            logger.error("微信获取AccessToken失败!errcode:{};errmsg:{}", JSONObject.parseObject(backStr).getString("errcode"), JSONObject.parseObject(backStr).getString("errmsg"));
+        }
+        return null;
+    }
+
+    /**
+     * 微信获取用户信息
+     *
+     * @param openid
+     * @param access_token sex 普通用户性别，1为男性，2为女性
+     *                     性别 M-男 F-女 N-保密
+     * @return
+     */
+    @RequestMapping("/getWxUserByOpenId")
+    @ResponseBody
+    public String getWxUserByOpenId(String openid, String access_token) {
+        String url = propertiesUtil.getString("weixin.userUrl").trim()
+                + "?access_token=" + access_token
+                + "&openid=" + openid;
+        String backStr = HttpUtil.httpRequest(url, "GET", null);
+        if (StringUtils.isNotBlank(JSONObject.parseObject(backStr).getString("openid"))) {
+            return backStr;
+        } else {
+            logger.error("微信获取用户信息失败!errcode:{};errmsg:{}", JSONObject.parseObject(backStr).getString("errcode"), JSONObject.parseObject(backStr).getString("errmsg"));
+        }
+        return null;
+    }
+
+
+}

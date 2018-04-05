@@ -1,0 +1,1263 @@
+package com.bqiong.usercenter.util;
+
+import java.lang.reflect.Type;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.exception.ExceptionUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.alibaba.fastjson.JSONObject;
+
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Transaction;
+import redis.clients.jedis.Tuple;
+import redis.clients.jedis.exceptions.JedisException;
+
+/**
+ * redis工具类
+ * @author yewenhai
+ *
+ */
+public class RedisUtil{
+
+    private static final Logger log = LoggerFactory.getLogger(RedisUtil.class);
+
+    /** jedis 连接池 **/
+    private static JedisPool pool;
+
+    /**
+     * 将hash表key中的field设置为value，如果hash表不存则生成一个
+     * @param key 
+     * @param field
+     * @param value
+     */
+    public static void hset(String key, String field, String value) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.hset(key, field, value);
+        } catch (Exception e) {
+            log.error("RedisUtil.hset exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 把对象放入Hash中
+     */
+    public static void hset(String key, String field, String value, int seconds) {
+        hset(key, field, value);
+        expire(key, seconds);
+    }
+
+    /**
+     * 存储string对象，并且设置其过期值
+     * @param key 
+     * @param value
+     * @param seconds
+     */
+    public static void set(String key, String value, int seconds) {
+        set(key, value);
+        expire(key, seconds);
+    }
+
+    /**
+     * 删除一个或多个key
+     * @param key
+     */
+    public static void del(String... key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.del(key);
+        } catch (Exception e) {
+            log.error("RedisUtil.del exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 重命名rediskey值
+     * @param oldKey
+     * @param newKey
+     */
+    public static void rename(String oldKey, String newKey) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.rename(oldKey, newKey);
+        } catch (Exception e) {
+            log.error("RedisUtil.rename oldKey:{}, newKey:{},exception {}", oldKey, newKey, ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 判断redis中是否有指定key
+     * @param key
+     * @return
+     */
+    public static Set<String> keys(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            return jedis.keys(key);
+        } catch (Exception e) {
+            log.error("RedisUtil.keys key:{},exception {}", key, ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 存储序列化对象到数组中
+     * @param key
+     * @param value
+     */
+    public static void lpush(byte[] key, byte[] value) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.lpush(key, value);
+        } catch (Exception e) {
+            log.error("RedisUtil.lpush exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将一个值value插入到列表key的表头
+     * @param key
+     * @param value
+     */
+    public static void lpush(String key, String value) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.lpush(key, value);
+        } catch (Exception e) {
+            log.error("RedisUtil.lpush exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+	/**
+	 * 将一个值value插入到列表key的表头
+	 * 
+	 * @param key
+	 * @param value
+	 * @author zhangchen
+	 */
+	public static Long rpush(String key, String... value) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			return jedis.rpush(key, value);
+		} catch (Exception e) {
+			log.error("RedisUtil.lpush exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+
+	
+	
+	/**
+	 * 移除并返回列表key的头元素
+	 * 
+	 * @param key
+	 * @return
+	 */
+	public static String rpop(String key) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			return jedis.rpop(key);
+		} catch (Exception e) {
+			log.error("RedisUtil.lpop exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+
+	/**
+	 * 移除并返回列表key的头元素
+	 * 
+	 * @param key
+	 * @return
+	 */
+	public static String lpop(String key) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			return jedis.lpop(key);
+		} catch (Exception e) {
+			log.error("RedisUtil.lpop exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+
+    /**
+     * 将 key 中储存的数字值增加count。如果 key 不存在，那么 key 的值会先被初始化为 0 ，然后再执行 INCR 操作。
+     * @param key
+     * @param count
+     */
+    public static void incr(String key, int count) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            for (int i = 0; i < count; i++) {
+                jedis.incr(key);
+            }
+        } catch (Exception e) {
+            log.error("RedisUtil.incr exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+  
+    /**
+    *  
+    * @param key
+    * @param step	步长
+    * @return
+    */
+    public static Long incrByStep(String key, int step) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+          
+            return jedis.incr(key);
+        } catch (Exception e) {
+            log.error("RedisUtil.incr exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+    
+    
+	/**
+	 * 将hash 中储存的数字值减一,并且保证不为负数
+	 * 
+	 * @param key
+	 * @param count
+	 * @author zhang chen
+	 * @return true=成功 fasle=剩余的值为零 或 key不存在
+	 */
+	public static boolean hdecr(String key, String field) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			if (jedis.hexists(key, field)) {
+				String res = jedis.hget(key, field);
+				if (Integer.valueOf(res) > 0) {
+					jedis.hincrBy(key, field, -1);
+					return true;
+				}
+			}
+			return false;
+		} catch (Exception e) {
+			log.error("RedisUtil.incr exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+
+	/**
+	 * 将hash 中储存的数字值加一,并且保证不为负数
+	 * 
+	 * @param key
+	 * @param count
+	 * @author zhang chen
+	 * @return true=成功 
+	 */
+	public static boolean hincr(String key, String field) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			jedis.hincrBy(key, field, 1);
+			return true;
+		} catch (Exception e) {
+			log.error("RedisUtil.incr exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+
+	/**
+	 * 删除哈希表 key 中的一个或多个指定field，不存在的field将被忽略
+	 * 
+	 * @param key
+	 * @param fields
+	 */
+	public static void hdel(String key, String... fields) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			jedis.hdel(key, fields);
+		} catch (Exception e) {
+			log.error("RedisUtil.hdel exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+
+    /**
+     * 将字符串值 value 关联到 key
+     *
+     * @param key
+     * @param value
+     */
+    public static void set(String key, String value) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.set(key, value);
+        } catch (Exception e) {
+            log.error("RedisUtil.set exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将字符串值 value 关联到 key
+     *
+     * @param key
+     * @param value
+     */
+    public static void set(byte[] key, byte[] value) {
+
+        Jedis jedis = null;
+        try {
+
+            jedis = pool.getResource();
+
+            jedis.set(key, value);
+        } catch (Exception e) {
+            log.error("RedisUtil.set exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 返回 key 所关联的字符串值。
+     *
+     * @param key
+     * @return
+     */
+
+    public static String get(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            String value = jedis.get(key);
+            return value;
+        } catch (Exception e) {
+            log.error("RedisUtil.get exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * Description: 获取hash缓存内容，如果key/field不存在则返回null
+     * @param key
+     * @param field
+     * @return key-field对应的value
+     * */
+    public static String get(String key, String field) {
+        return hget(key, field);
+    }
+
+    /**
+     * 返回 key 所关联的字符串值。
+     *
+     * @param key
+     * @return
+     */
+
+    public static byte[] get(byte[] key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            byte[] value = jedis.get(key);
+            return value;
+        } catch (Exception e) {
+            log.error("RedisUtil.get exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将多个field - value(域-值)对设置到哈希表key中。
+     * 
+     * @param key
+     * @param map
+     */
+    public static void hmset(String key, Map<String, String> map) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.hmset(key, map);
+        } catch (Exception e) {
+            log.error("RedisUtil.hmset exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 返回哈希表 key 中，一个或多个给定field的值
+     * @param key
+     * @param fields
+     * @return
+     */
+    public static List<String> hmget(String key, String... fields) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            return jedis.hmget(key, fields);
+        } catch (Exception e) {
+            log.error("RedisUtil.hmset exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将值 value 关联到 key ，并将 key 的生存时间设为 seconds (以秒为单位)
+     *
+     * @param key
+     * @param seconds
+     * @param value
+     */
+
+    public static void setex(String key, int seconds, String value) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.setex(key, seconds, value);
+        } catch (Exception e) {
+            log.error("RedisUtil.setex exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 为给定 key 设置生存时间，当 key 过期时/秒(生存时间为 0 )，它会被自动删除
+     * 
+     * @param key
+     * @param seconds
+     */
+    public static void expire(String key, int seconds) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.expire(key, seconds);
+        } catch (Exception e) {
+            log.error("RedisUtil.expire exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+	/**
+	 * 是否存在哈希域
+	* @Title: hexists 
+	* @Description: TODO(这里用一句话描述这个方法的作用) 
+	* @param  @param key
+	* @param  @param field
+	* @param  @return
+	* @return boolean    返回类型 
+	* @throws
+	 */
+	public static boolean hexists(String key, String field) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			return jedis.hexists(key, field);
+		} catch (Exception e) {
+			log.error("RedisUtil.hget(String key, String field) exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+	
+	/**
+	 * key是否存在
+	* @Title: exists 
+	* @Description: TODO(这里用一句话描述这个方法的作用) 
+	* @param  @param key
+	* @param  @return
+	* @return boolean    返回类型 
+	* @throws
+	 */
+	public static boolean exists(String key) {
+		Jedis jedis = null;
+		try {
+			jedis = pool.getResource();
+			return jedis.exists(key);
+		} catch (Exception e) {
+			log.error("RedisUtil.exists(String key) exception {}", ExceptionUtils.getFullStackTrace(e));
+			if (jedis != null) {
+				pool.returnBrokenResource(jedis);
+			}
+			throw new JedisException(e);
+		} finally {
+			if (pool != null) {
+				pool.returnResource(jedis);
+			}
+		}
+	}
+	
+	
+	/**
+	 * 从哈希表key中获取field的value
+	 * 
+	 * @param key
+	 * @param field
+	 */
+
+    public static String hget(String key, String field) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            String value = jedis.hget(key, field);
+            return value;
+        } catch (Exception e) {
+            log.error("RedisUtil.hget(String key, String field) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+    
+    public static Integer hgetInt(String key, String field) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            String value = jedis.hget(key, field);
+            if(StringUtils.isNumeric(value))
+            {
+            	return Integer.parseInt(value);
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("RedisUtil.hget(String key, String field) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 从哈希表key中获取field的value
+     *
+     * @param key
+     */
+
+    public static Map<String, String> hgetAll(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            Map<String, String> map = jedis.hgetAll(key);
+            return map;
+        } catch (Exception e) {
+            log.error("RedisUtil.hgetAll(String key) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 返回哈希表 key 中给定域 field 指定索引的值
+     * @param key
+     * @param field
+     * @param dbIndex
+     * @return
+     */
+    public static String hget(String key, String field, int dbIndex) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.select(dbIndex);
+            String value = jedis.hget(key, field);
+            return value;
+        } catch (Exception e) {
+            log.error("RedisUtil.hget(String key, String field, int dbIndex) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 从Hash中获取对象,转换成制定类型
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T hget(String key, String field, Type clazz) {
+
+        String jsonContext = get(key, field);
+
+        return (T) JSONObject.parseObject(jsonContext, clazz);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> T get(String key, Type clazz) {
+        String jsonContext = get(key);
+        if (StringUtils.isEmpty(jsonContext)) {
+            return null;
+        }
+        return (T) JSONObject.parseObject(jsonContext, clazz);
+    }
+
+    /**
+     * 从哈希表key中获取field的value MAP
+     * 
+     * @param key
+     */
+
+    public static Map<String, String> hget(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            Map<String, String> value = jedis.hgetAll(key);
+            return value;
+        } catch (Exception e) {
+            log.error("RedisUtil.hget(String key) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将一个或多个 member 元素加入到集合 key 当中，已经存在于集合的 member 元素将被忽略
+     * @param key
+     * @param member
+     * @return
+     */
+    public static Long setAdd(String key, String... member) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            return jedis.sadd(key, member);
+        } catch (Exception e) {
+            log.error("RedisUtil.setAdd(String key, String... member) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将数据放入zset中
+     * @param key
+     * @param scoreMembers
+     */
+    public static void zadd(String key, Map<Double, String> scoreMembers) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.zadd(key, scoreMembers);
+        } catch (Exception e) {
+            log.error("RedisUtil.zadd(String key, Map<Double, String> scoreMembers) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将zset中的指定元素的score增长score
+     * @param key
+     * @param scoreMembers
+     */
+    public static void zincrby(String key, double score, String member) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.zincrby(key, score, member);
+        } catch (Exception e) {
+            log.error("RedisUtil.zadd(String key, Map<Double, String> scoreMembers) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 将zset中的指定元素的score增长score
+     * @param key
+     * @param scoreMembers
+     */
+    public static double zincrbyReturnScore(String key, double score, String member) {
+        Jedis jedis = null;
+        double result;
+        try {
+            jedis = pool.getResource();
+            result = jedis.zincrby(key, score, member);
+        } catch (Exception e) {
+            log.error("RedisUtil.zadd(String key, Map<Double, String> scoreMembers) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 反向遍历zset（score大的在前）
+     * @param key
+     * @param start
+     * @param end
+     * @return
+     */
+    public static Set<String> zrevrange(String key, long start, long end) {
+        Jedis jedis = null;
+        Set<String> result = null;
+        try {
+            jedis = pool.getResource();
+            result = jedis.zrevrange(key, start, end);
+        } catch (Exception e) {
+            log.error("RedisUtil.zadd(String key, Map<Double, String> scoreMembers) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 反向遍历zset（score大的在前）
+     * @param key
+     * @param start
+     * @param end
+     * @return
+     */
+    public static Set<Tuple> zrevrangewithscore(String key, long start, long end) {
+        Jedis jedis = null;
+        Set<Tuple> result = null;
+        try {
+            jedis = pool.getResource();
+            result = jedis.zrevrangeWithScores(key, start, end);
+        } catch (Exception e) {
+            log.error("RedisUtil.zrevrangewithscore exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return result;
+    }
+    
+    /**
+     * 返回指定member的score，当member不存在时，返回Null
+     * @param key
+     * @param member
+     * @return
+     */
+    public static Double zscore(String key, String member) {
+    	Jedis jedis = null;
+    	Double result = null;
+    	try {
+            jedis = pool.getResource();
+            result = jedis.zscore(key, member);
+        } catch (Exception e) {
+            log.error("RedisUtil.zrevrangewithscore exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    	return result;
+    }
+    
+
+    /**
+     * <p>通过key获取set中的差集</p>
+     * <p>以第一个set为标准</p>
+     * @param keys 可以使一个string 则返回set中所有的value 也可以是string数组
+     * @return
+     */
+    public static Set<String> sdiff(String... keys) {
+        Jedis jedis = null;
+        Set<String> res = null;
+        try {
+            jedis = pool.getResource();
+            res = jedis.sdiff(keys);
+        } catch (Exception e) {
+            pool.returnBrokenResource(jedis);
+            log.error("RedisUtil.sdiff(String... keys) exception {}", ExceptionUtils.getFullStackTrace(e));
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 返回集合 key 中的成员。
+     * @param key
+     * @param start
+     * @param end
+     * @return
+     */
+    public static Set<String> smembers(String key) {
+        Jedis jedis = null;
+        Set<String> res = null;
+        try {
+            jedis = pool.getResource();
+            res = jedis.smembers(key);
+        } catch (Exception e) {
+            pool.returnBrokenResource(jedis);
+            log.error("RedisUtil.smembers(String key) exception {}", ExceptionUtils.getFullStackTrace(e));
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 判断制定成员是否存在。
+     * @param key
+     * @param start
+     * @param end
+     * @return
+     */
+    public static boolean sismembers(String key, String member) {
+        Jedis jedis = null;
+        boolean res = false;
+        try {
+            jedis = pool.getResource();
+            res = jedis.sismember(key, member);
+        } catch (Exception e) {
+            pool.returnBrokenResource(jedis);
+            log.error("RedisUtil.sismembers(String key, String member) exception {}", ExceptionUtils.getFullStackTrace(e));
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 返回列表 key 中指定区间内的元素，区间以偏移量 start 和 stop 指定。
+     * @param key
+     * @param start
+     * @param end
+     * @return
+     */
+    public static List<String> lrange(String key, long start, long stop) {
+        Jedis jedis = null;
+        List<String> res = null;
+        try {
+            jedis = pool.getResource();
+            res = jedis.lrange(key, start, stop);
+        } catch (Exception e) {
+            pool.returnBrokenResource(jedis);
+            log.error("RedisUtil.lrange(String key, long start, long stop) exception {}", ExceptionUtils.getFullStackTrace(e));
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 移除并返回集合中的一个元素。
+     * @param key
+     * @return
+     */
+    public static String spop(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            return jedis.spop(key);
+        } catch (Exception e) {
+            log.error("RedisUtil.spop(String key) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 返回集合key的元素数量
+     * @param key
+     * @return
+     */
+    public static long scard(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            return jedis.scard(key);
+        } catch (Exception e) {
+            log.error("RedisUtil.scard(String key) exception {}", ExceptionUtils.getFullStackTrace(e));
+
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+    /**
+     * 移除集合 key 中的一个或多个 member 元素，不存在的 member 元素会被忽略。
+     * @param key
+     * @param member
+     */
+    public static void srem(String key, String... member) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            jedis.srem(key, member);
+        } catch (Exception e) {
+            log.error("RedisUtil.srem(String key, String... member) exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+
+    public static JedisPool getPool() {
+        return pool;
+    }
+
+    public void setPool(JedisPool pool) {
+        RedisUtil.pool = pool;
+    }
+
+    /**
+     * 释放pool
+     * @param pool
+     * @param jedis
+     */
+    public static void releasePool(JedisPool pool, Jedis jedis) {
+        if (jedis != null) {
+            pool.returnBrokenResource(jedis);
+        }
+        if (pool != null) {
+            pool.returnResource(jedis);
+        }
+    }
+
+    /**
+     * 获取jedis锁
+     * @param jedis
+     * @param lockName 锁定key
+     * @param acquireTimeout 尝试获取锁时间(毫秒)
+     * @param lockTimeout   锁定时间(毫秒)
+     * @return
+     */
+    public static String acquireLockWithTimeout(
+            Jedis jedis, String lockName, long acquireTimeout, long lockTimeout) {
+        String identifier = UUID.randomUUID().toString();
+        String lockKey = "lock:" + lockName;
+        int lockExpire = (int) (lockTimeout / 1000);
+        long end = System.currentTimeMillis() + acquireTimeout;
+        while (System.currentTimeMillis() <= end) {
+            if (jedis.setnx(lockKey, identifier) == 1) {
+                jedis.expire(lockKey, lockExpire);
+                return identifier;
+            }
+            if (jedis.ttl(lockKey) == -1) {
+                jedis.expire(lockKey, lockExpire);
+            }
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        // null indicates that the lock was not acquired
+        return null;
+    }
+
+    /**
+     * 释放锁
+     * @param jedis
+     * @param lockName
+     * @param identifier
+     * @return
+     */
+    public static boolean releaseLock(Jedis jedis, String lockName, String identifier) {
+        String lockKey = "lock:" + lockName;
+        while (true) {
+            jedis.watch(lockKey);
+            if (identifier.equals(jedis.get(lockKey))) {
+                Transaction trans = jedis.multi();
+                trans.del(lockKey);
+                List<Object> results = trans.exec();
+                if (results == null) {
+                    continue;
+                }
+                return true;
+            }
+            jedis.unwatch();
+            break;
+        }
+        return false;
+    }
+
+    /**
+     * 获取列表长度
+     *
+     * @param key
+     * @return
+     */
+    public static Long llen(String key) {
+        Jedis jedis = null;
+        try {
+            jedis = pool.getResource();
+            return jedis.llen(key);
+        } catch (Exception e) {
+            log.error("RedisUtil.llen exception {}", ExceptionUtils.getFullStackTrace(e));
+            if (jedis != null) {
+                pool.returnBrokenResource(jedis);
+            }
+            throw new JedisException(e);
+        } finally {
+            if (pool != null) {
+                pool.returnResource(jedis);
+            }
+        }
+    }
+
+
+
+}

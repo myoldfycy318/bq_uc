@@ -1,0 +1,96 @@
+package com.qbao.store.controller.thirdpart;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.LoginTypeEnum;
+import com.bqiong.usercenter.constants.ThirdConstants;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.thirdpart.BindEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.helper.ShardHelper;
+import com.qbao.store.mapper.user.UserBasicMapper;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.thirdpart.BindService;
+import com.qbao.store.util.CommonUtil;
+import com.qbao.store.util.UserCenterContext;
+
+@Controller
+@RequestMapping("/thirdpart")
+public class BindController extends BaseController
+{
+	@Autowired
+	BindService bindService;
+	
+	@Autowired
+	RegisterService registerService;
+	
+	@Autowired
+	UserBasicMapper userBasicMapper;
+	
+	@RequestMapping("/implicitBind")
+    @ResponseBody
+    public String implicitBind(String thirdId, String openId, String clientId, String buId, String channelId, HttpServletRequest request)
+    {
+		try 
+		{
+		    if(StringUtils.isBlank(openId))
+		    {
+		        return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+		    }
+			validateBuId(buId);
+			//请求来源是app_store时候，没有clientid，使用buId标识
+			if(StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK)
+			{
+				clientId = buId;
+			}
+			else
+			{
+				validateClientId(clientId);
+			}
+			
+			UserBasicEntity userBasicEntity = null;
+			BindEntity bindEntity = bindService.queryByThird(thirdId, openId);
+			if(bindEntity != null)
+			{
+				userBasicEntity = userBasicMapper.queryById(bindEntity.getUserId(), ShardHelper.getUserBasicTableName(bindEntity.getUserId()));
+			}
+			else
+			{
+				String mobile = ThirdConstants.DEF_THIRD_MOBILE_PREFIX + RandomStringUtil.getRandomMobileSuffix();
+			    String password = ThirdConstants.DEF_THIRD_PASSWORD;
+			    userBasicEntity = registerService.register(null, mobile, password, null, buId, null, channelId,clientId);
+			    BindEntity buildEntity = CommonUtil.buildBindEntity(thirdId, openId, userBasicEntity.getUserId(), UserCenterConstants.NORMAL);
+			    bindService.bind(buildEntity);
+			}
+			
+			UserCenterContext.buildUserBasicInfo2LogEntity(userBasicEntity);
+			String accessToken = cacheToken(clientId, userBasicEntity.getUserId(), userBasicEntity.getSalt());
+			RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.thirdpart.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+			Map<String, String> data = new HashMap<String, String>();
+			data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+			data.put(UserCenterConstants.DOME_USER_ID, userBasicEntity.getUserId());
+			return JSONObject.toJSONString(buildResponse(data));
+		
+		}catch (Exception e)
+		{
+			return handleException(e.getMessage(), e);
+		}
+    }
+	
+}

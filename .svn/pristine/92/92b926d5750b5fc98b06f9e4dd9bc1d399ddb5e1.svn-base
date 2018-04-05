@@ -1,0 +1,58 @@
+/**
+ *
+ */
+package com.qbao.store.controller.thirdpart.qbao;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.SpringBeanProxy;
+import com.qbao.store.provider.QbaoCasAuthenticationProvider;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
+
+
+@Controller
+@RequestMapping("/qbao")
+public class AppLogin {
+
+    Logger logger = LoggerFactory.getLogger(AppLogin.class);
+
+    /**
+     * 供钱宝app客户端传递st调起
+     *
+     * @return
+     */
+    @RequestMapping(value = "/account4Client/login")
+    @ResponseBody
+    public String login(HttpServletRequest request) {
+        try {
+            if (StringUtils.isBlank(request.getParameter("st")) || StringUtils.isBlank(request.getParameter("buId"))
+                    || StringUtils.isBlank(request.getParameter("domain")))
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+            UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken("_cas_stateful_", request.getParameter("st"));
+            Map<String, String> map = new HashMap<String, String>();
+            map.put("appClientService", "https://" + request.getParameter("domain") + "/j_spring_cas_security_check");
+            map.put("buId",request.getParameter("buId"));
+            authenticationToken.setDetails(map);
+            QbaoCasAuthenticationProvider casAuthenticationProvider = SpringBeanProxy.getBean(QbaoCasAuthenticationProvider.class, "casAuthenticationProvider");
+            Authentication authentication = casAuthenticationProvider.authenticate(authenticationToken);
+            return authentication == null ? JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION)) : (String) authentication.getPrincipal();
+        } catch (Exception e) {
+            logger.error("从钱宝客户端获取用户信息异常，请求参数:{}", JSONObject.toJSONString(request.getParameterMap()), e);
+            return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+        }
+    }
+
+
+}

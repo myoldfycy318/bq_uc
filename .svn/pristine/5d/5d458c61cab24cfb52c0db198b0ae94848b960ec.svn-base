@@ -1,0 +1,154 @@
+package com.qbao.store.service.impl.tourist;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.ThirdConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.util.RandomStringUtil;
+import com.qbao.store.entity.index.EmailIndexEntity;
+import com.qbao.store.entity.index.ImsiIndexEntity;
+import com.qbao.store.entity.index.MobileIndexEntity;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.mapper.index.ImsiIndexEntityMapper;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.UserBasicService;
+import com.qbao.store.service.index.EmailIndexService;
+import com.qbao.store.service.index.MobileIndexService;
+import com.qbao.store.service.tourist.TouristBindService;
+import com.qbao.store.util.MD5Util;
+
+@Service("touristBindService")
+public class TouristBindServiceImpl implements TouristBindService
+{
+	private static final Logger log = LoggerFactory.getLogger(TouristBindServiceImpl.class);
+	
+	@Autowired
+	ImsiIndexEntityMapper imsiIndexEntityMapper;
+	
+	@Autowired
+	MobileIndexService mobileIndexService;
+	
+	@Autowired
+	EmailIndexService emailIndexService;
+	
+	@Autowired
+	UserBasicService userBasicService;
+	
+	@Autowired
+	RegisterService registerService;
+	
+	@Transactional
+	@Override
+	public UserBasicEntity touristLogin(String imsi, String buId) throws Exception
+	{
+		//一个设备可能有多个游客账号，登录时候如果没有账号新建，有的话选择没有绑定的账号进行登录
+		ImsiIndexEntity imsiEntity = imsiIndexEntityMapper.selectByImsi(imsi);
+		if(imsiEntity == null)
+		{
+			UserBasicEntity entity = autoRegister(imsi, buId);
+			return entity;
+		}
+		return userBasicService.queryById(imsiEntity.getUserId());
+	}
+	
+	private UserBasicEntity autoRegister(String imsi, String buId) throws Exception
+	{
+		String mobile = ThirdConstants.DEF_THIRD_MOBILE_PREFIX + RandomStringUtil.getRandomMobileSuffix();
+	    String password = ThirdConstants.DEF_THIRD_PASSWORD;
+	    UserBasicEntity entity = registerService.register(null, mobile, password, null, buId, null, null,buId);
+	    ImsiIndexEntity imsiIndexEntity = new ImsiIndexEntity(imsi, entity.getUserId());
+	    imsiIndexEntityMapper.insert(imsiIndexEntity);
+	    return entity;
+	}
+	
+	
+	@Transactional
+	@Override
+	public UserBasicEntity bind(String imsi, String countryCode, String passport, String password, String buId, String channelId) throws Exception
+	{
+		ImsiIndexEntity imsiEntity = imsiIndexEntityMapper.selectByImsi(imsi);
+		if(imsiEntity == null)
+		{
+			log.error("no tourist account found, imsi=" + imsi);
+			throw new BizException(ErrorCode.BIND_FAIL.getCode());
+		}
+		if(getBindFlag(imsiEntity.getIsBind()) == true)
+		{
+			log.error("tourist account has band, imsi=" + imsi);
+			throw new BizException(ErrorCode.HAS_BIND.getCode());
+		}
+		PassportType type ;
+		//判断账号是否已经存在，仅可绑定未注册账号
+		if (!countryCode.equals("86")) {
+			type = PassportType.getPassportType(passport);
+		}else{
+			type = PassportType.getPassportTypeForInner(passport);
+		}
+		
+		if(PassportType.mobile == type)
+		{
+			MobileIndexEntity mobileIndexEntity = mobileIndexService.queryByMobile(countryCode, passport);
+			if(mobileIndexEntity != null)
+			{
+				log.info("绑定账号已存在，passport=" + passport);
+				throw new BizException(ErrorCode.BIND_PASSPORT_EXIST.getCode());
+			}
+		}
+		if(PassportType.email == type)
+		{
+			EmailIndexEntity emailIndexEntity = emailIndexService.queryByEmail(passport);
+			if(emailIndexEntity != null)
+			{
+				log.info("绑定账号已存在，passport=" + passport);
+				throw new BizException(ErrorCode.BIND_PASSPORT_EXIST.getCode());
+			}
+		}
+		//更新索引表的绑定状态
+		imsiIndexEntityMapper.updateBindStatus(new ImsiIndexEntity(imsiEntity.getId(), 1));
+		
+		//更新index表，更新basic表的数据
+		UserBasicEntity userEntity = userBasicService.queryById(imsiEntity.getUserId());
+		String salt = RandomStringUtil.generateSalt();
+		String encPassword = MD5Util.getMD5String(password + salt);
+		
+		if(PassportType.mobile == type)
+		{
+			//mobileIndexService.insertWithUserId(passport, imsiEntity.getUserId());
+			mobileIndexService.delete(userEntity.getMobile(), imsiEntity.getUserId());
+			mobileIndexService.insertWithUserId(countryCode, passport, imsiEntity.getUserId());
+			userEntity.setMobile(passport);
+		}
+		if(PassportType.email == type)
+		{
+			mobileIndexService.delete(userEntity.getMobile(), imsiEntity.getUserId());
+			emailIndexService.insertWithUserId(passport, imsiEntity.getUserId());
+			userEntity.setEmail(passport);
+		}
+		userEntity.setPassword(encPassword);
+		userEntity.setSalt(salt);
+        userEntity.setCountryCode(countryCode);
+		userBasicService.update(userEntity);
+		return userEntity;
+	}
+	
+	@Override
+	public int isBind(String imsi) throws Exception {
+		ImsiIndexEntity entity = imsiIndexEntityMapper.selectByImsi(imsi);
+		if(entity == null || !getBindFlag(entity.getIsBind()))
+		{
+			return 0;
+		}
+		return 1;
+	}
+	
+	private boolean getBindFlag(int bindFlag)
+	{
+		return bindFlag == 0? false : true;
+	}
+}

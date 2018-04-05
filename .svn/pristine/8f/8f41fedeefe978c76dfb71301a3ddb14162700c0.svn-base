@@ -1,0 +1,226 @@
+package com.qbao.store.controller.user;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.BUEnum;
+import com.bqiong.usercenter.constants.BizType;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.PassportType;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.exception.BizException;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.MailUtil;
+import com.bqiong.usercenter.util.SMSUtils;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.user.UserBasicEntity;
+import com.qbao.store.service.RegisterService;
+
+/**
+ * **********************************************************
+ *  内容摘要	：<p>
+ *
+ *  作者	：94841
+ *  创建时间	：2016年4月15日 下午6:01:21 
+ *  当前版本号：v1.0
+ *  历史记录	:
+ *  	日期	: 2016年4月15日 下午6:01:21 	修改人：niuzan
+ *  	描述	:
+ ***********************************************************
+ */
+@Controller
+@RequestMapping("/register")
+public class RegisterController extends BaseController
+{
+	@Autowired
+	private RegisterService registerService;
+	
+	/**
+	 * 
+	 *  函数名称 : register
+	 *  功能描述 :  
+	 *  参数及返回值说明：
+	 *  	@param clientId 请求来源sdk分配给第三方的唯一id
+	 *  	@param buId 当前请求来源的sdk的buId
+	 *  	@param passport
+	 *  	@param password
+	 *  	@return
+	 *
+	 *  修改记录：
+	 *  	日期 ：2016年4月13日 下午4:30:36	修改人：  niuzan
+	 *  	描述	：
+	 * @throws BizException 
+	 *
+	 */
+	@RequestMapping("/registerConfirm")
+    @ResponseBody
+    public String register(
+    		@RequestParam(value="countryCode",defaultValue="86")String countryCode, 
+    		String passport, 
+    		String password, 
+    		String gender, 
+    		String avatarUrl, 
+    		String mobileCode, 
+    		String buId, 
+    		String clientId, 
+    		String channelId)
+    {
+		try
+		{
+			validateBuId(buId);
+			//请求来源是app_store时候，没有clientid，使用buId标识
+			if(StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK)
+			{
+				clientId = buId;
+			}
+			else
+			{
+				validateClientId(clientId);
+			}
+			PassportType type = validatePassport(countryCode,passport);
+			if(type != PassportType.mobile)
+			{
+				log.error("参数passport类型错误, passport = " + passport);
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+			}
+			
+			SMSUtils.verifySmsCode(countryCode,passport, mobileCode, clientId, BizType.register.name());
+			
+			validatePassword(password, isAESContent(BUEnum.getFromKey(buId)));
+			
+			UserBasicEntity entity = registerService.register(countryCode, passport, password, gender, buId, avatarUrl, channelId,clientId);
+			log.info("注册返回结果entity=" + entity);
+			
+			if(entity == null)
+			{
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+			}
+			
+			String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());			
+	      
+			Map<String, String> result = new HashMap<String, String>();
+	        result.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+	        result.put("domeUserId", entity.getUserId());
+	        return JSONObject.toJSONString(buildResponse(result));
+		}catch(Exception e)
+		{
+			return handleException("mobile="+ passport + ", clientId="+ clientId +",buId="+ buId, e);
+		}
+    }
+	
+	@RequestMapping("/webRegister")
+    @ResponseBody
+    public String webRegister(String passport, String password, String confirmPassword, String smsToken, String buId, 
+    		String clientId, HttpServletRequest request)
+    {
+		try
+		{
+			validateBuId(buId);
+			//请求来源是app_store时候，没有clientid，使用buId标识
+			if(StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK)
+			{
+				clientId = buId;
+			}
+			else
+			{
+				validateClientId(clientId);
+			}
+			
+			PassportType type = validatePassport(null,passport);
+			if(type != PassportType.mobile)
+			{
+				log.error("参数passport类型错误, passport = " + passport);
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+			}
+			
+			validatePassword(password, isAESContent(BUEnum.getFromKey(buId)));
+			
+			validatePassword(confirmPassword, isAESContent(BUEnum.getFromKey(buId)));
+			
+			//校验两次密码是否一致
+			if(!StringUtils.equals(password, confirmPassword))
+			{
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.CONFIRM_RESET_NOT_SAME));
+			}
+			
+			SMSUtils.validateSmsToken(passport, smsToken, clientId, BizType.register.name());
+			
+			UserBasicEntity entity = registerService.register(null, passport, password, null, buId, null, null,clientId);
+			log.info("注册返回结果entity=" + entity);
+			
+			if(entity == null)
+			{
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+			}
+			
+			String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());			
+	      
+			Map<String, String> result = new HashMap<String, String>();
+	        result.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+	        return JSONObject.toJSONString(buildResponse(result));
+		}catch(Exception e)
+		{
+			return handleException("", e);
+		}
+    }
+	
+	@RequestMapping("/registerEmail")
+    @ResponseBody
+    public String registerEmail(String email, String password, String gender, String avatarUrl, String emailCode, 
+    		String buId, String clientId, String channelId,HttpServletRequest request)
+    {
+		try
+		{
+			validateBuId(buId);
+			//请求来源是app_store时候，没有clientid，使用buId标识
+			if(StringUtils.isBlank(clientId) && BUEnum.getFromKey(buId) != BUEnum.DOME_SDK)
+			{
+				clientId = buId;
+			}
+			else
+			{
+				validateClientId(clientId);
+			}
+			
+			PassportType type = validatePassport(null,email);
+			if(type != PassportType.email)
+			{
+				log.error("参数passport类型错误, passport = " + email);
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.PASSPORT_ILLEGLE));
+			}
+			
+			//SMSUtils.verifySmsCode(email, emailCode, clientId, BizType.register.name());
+			MailUtil.verifyCode(email, clientId, BizType.register.name(), emailCode);
+			
+			validatePassword(password, isAESContent(BUEnum.getFromKey(buId)));
+			
+			UserBasicEntity entity = registerService.register(null, email, password, gender, buId, avatarUrl, channelId,clientId);
+			log.info("注册返回结果entity=" + entity);
+			
+			if(entity == null)
+			{
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+			}
+			
+			String accessToken = cacheToken(clientId, entity.getUserId(), entity.getSalt());			
+	      
+			Map<String, String> result = new HashMap<String, String>();
+	        result.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+	        return JSONObject.toJSONString(buildResponse(result));
+		}catch(Exception e)
+		{
+			return handleException("mobile="+ email + ", clientId="+ clientId +",buId="+ buId, e);
+		}
+    }
+	
+}

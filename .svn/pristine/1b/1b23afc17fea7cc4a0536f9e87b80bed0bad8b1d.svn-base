@@ -1,0 +1,85 @@
+package com.qbao.store.controller.thirdpart;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.annotation.OperateType;
+import com.bqiong.usercenter.constants.*;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.bqiong.usercenter.util.CommonUtil;
+import com.bqiong.usercenter.util.RedisUtil;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.request.RequestData;
+import com.qbao.store.entity.user.UserEntity;
+import com.qbao.store.service.RegisterService;
+import com.qbao.store.service.thirdpart.BindService;
+import com.qbao.store.service.thirdpart.ThirdPartyService;
+import com.qbao.store.util.BizUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import javax.annotation.Resource;
+import java.util.HashMap;
+import java.util.Map;
+
+@Controller
+@RequestMapping("/qbao")
+public class ThirdLoginByPasswordController extends BaseController {
+    @Autowired
+    BindService bindService;
+    @Autowired
+    RegisterService registerService;
+    @Resource(name = "qbaoService")
+    private ThirdPartyService qBaoService;
+
+
+    @OperateType(bizType = BizType.qbaoLogin)
+    @RequestMapping("/login")
+    @ResponseBody
+    public String login(RequestData requestData) {
+        try {
+            BUEnum buEnum = CommonUtil.validateBuId(requestData.getBuId());
+            BizUtil.validateClientId(requestData);
+            requestData.setOpenId(requestData.getQbaoUid());
+            requestData.setThirdId("1");
+            UserEntity userEntity = qBaoService.login(requestData);
+            String _clientId = BizUtil.distinguishPlatformOrGame(buEnum, requestData.getClientId());
+            String accessToken = cacheToken(_clientId, userEntity.getUserId(), userEntity.getSalt());
+            RedisUtil.set(UserCenterConstants.REDIS_LOGIN_TYPE_PREFIX + accessToken, LoginTypeEnum.thirdpart.name(), UserCenterConstants.TOKEN_EXPIRE_TIME);
+            Map<String, String> data = new HashMap<String, String>();
+            data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+            return JSONObject.toJSONString(buildResponse(data));
+        } catch (Exception e) {
+            return handleException(null, e);
+        }
+    }
+
+    @RequestMapping("/getThirdId")
+    @ResponseBody
+    public String getThirdIdByDomeId(String thirdpart, String domeId) {
+        try {
+            if (StringUtils.isBlank(domeId) || StringUtils.isBlank(thirdpart)) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+            }
+            ThirdPartyEnum thirdEnum = ThirdPartyEnum.getFromName(thirdpart);
+            if (thirdEnum == null) {
+                return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.USERID_ILLEGLE));
+            }
+            String userInfo = RedisUtil.hget(RedisContant.USER_BASIC_IDX, domeId);
+            UserEntity userEntity = null;
+            Map<String, String> map = new HashMap<>();
+            if (StringUtils.isBlank(userInfo) || (userEntity = JSONObject.parseObject(userInfo, UserEntity.class)) == null ||
+                    StringUtils.isEmpty(userEntity.getOpenId())) {
+                map.put(ThirdConstants.IS_BIND, "false");
+                return JSONObject.toJSONString(buildResponse(map));
+            }
+            map.put(ThirdConstants.IS_BIND, "true");
+            map.put(ThirdConstants.QBAO_UID, userEntity.getOpenId());
+            return JSONObject.toJSONString(buildResponse(map));
+        } catch (Exception e) {
+            return handleException("", e);
+        }
+    }
+
+}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<buIds>
+	<buId>
+		<id>DOME001</id>
+		<name>冰穹sdk</name>
+	</buId>
+	<buId>
+		<id>DOME002</id>
+		<name>冰穹应用商店app</name>
+	</buId>
+	<buId>
+		<id>DOME003</id>
+		<name>游戏发行sdk</name>
+	</buId>
+	<buId>
+		<id>DOME004</id>
+		<name>伪BU标识B端用户来源</name>
+	</buId>
+	<buId>
+		<id>DOME005</id>
+		<name>海外sdk</name>
+	</buId>
+	<buId>
+		<id>DOME006</id>
+		<name>passport</name>
+	</buId>
+    <buId>
+        <id>DOME007</id>
+        <name>h5game</name>
+    </buId>
+	<buId>
+		<id>DOME008</id>
+		<name>dome_h5_youpiao</name>
+	</buId>
+</buIds>

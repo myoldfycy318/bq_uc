@@ -1,0 +1,83 @@
+package com.qbao.store.controller.openPlatform;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.alibaba.fastjson.JSONObject;
+import com.bqiong.usercenter.constants.ErrorCode;
+import com.bqiong.usercenter.constants.UserCenterConstants;
+import com.bqiong.usercenter.httpresponse.BaseResponse;
+import com.qbao.store.controller.BaseController;
+import com.qbao.store.entity.openPlatform.OpenPlatformBasicEntity;
+import com.qbao.store.service.LoginService;
+import com.qbao.store.util.TokenUtil;
+
+@Controller
+@RequestMapping("/open")
+public class OpenLoginController extends BaseController
+{
+	@Autowired
+	private LoginService loginService;
+	
+	@RequestMapping("/login")
+    @ResponseBody
+    public String login(String passport, String password, HttpServletRequest request)
+    {
+		try {
+			validatePassport4OpenPlatform(passport);
+			
+			validatePassword(password, true);
+			
+			OpenPlatformBasicEntity entity = loginService.login4OpenPlatform(passport, password);
+			log.info("开放平台用户登录返回实体entity=" + entity);
+			
+			if(entity == null)
+			{
+				log.error("用户登录失败！");
+				return JSONObject.toJSONString(BaseResponse.fail(ErrorCode.SYSTEM_EXCEPTION));
+			}
+			String accessToken = "";
+			accessToken = TokenUtil.getCachedToken(UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, entity.getUserId());
+			if(StringUtils.isBlank(accessToken))
+			{
+				accessToken = cacheToken(UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, entity.getUserId(), entity.getSalt());
+			}
+
+			Map<String, String> data = new HashMap<String, String>();
+			data.put(UserCenterConstants.ACCESS_TOKEN, accessToken);
+			return JSONObject.toJSONString(buildResponse(data));
+		
+		}catch (Exception e)
+		{
+			return handleException("passport=" + passport + ",clientId=" + UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, e);
+		}
+    }
+	
+	@RequestMapping("/isPassportExist")
+    @ResponseBody
+    public String isPassportExist(String passport, HttpServletRequest request)
+    {
+		try {
+			validatePassport4OpenPlatform(passport);
+			
+			boolean isExist = loginService.isPassportExist4OpenPlatform(passport);
+			log.info("用户查询结果，isExist=" + isExist);
+
+			Map<String, Boolean> data = new HashMap<String, Boolean>();
+			data.put(UserCenterConstants.IS_PASSPORT_EXIST, isExist);
+			return JSONObject.toJSONString(buildResponse(data));
+		}catch (Exception e)
+		{
+			return handleException("passport=" + passport + ",clientId=" + UserCenterConstants.DEF_CLIENTID_4_OPEN_PLATFORM, e);
+		}
+    }
+	
+}

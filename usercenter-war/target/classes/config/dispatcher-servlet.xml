@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xsi:schemaLocation="http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-4.0.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd
+        http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.0.xsd">
+
+    <!-- 配置默认首页 -->
+    <mvc:view-controller path="/" view-name="redirect:/market/app-home.html"/>
+    <context:component-scan base-package="com.qbao.store.controller">
+        <!-- 这里只扫描Controller，不可重复加载Service -->
+        <context:include-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
+    </context:component-scan>
+
+    <!-- 支持对静态资源文件的访问 -->
+    <mvc:default-servlet-handler />
+    
+    <!-- 支持切面  -->
+    <aop:aspectj-autoproxy />
+
+    <mvc:annotation-driven>
+        <mvc:message-converters>
+			<bean class="org.springframework.http.converter.StringHttpMessageConverter">
+				<constructor-arg value="utf-8" />
+				<property name="writeAcceptCharset" value="false" />
+			</bean>
+		</mvc:message-converters>
+    </mvc:annotation-driven>
+    
+    <bean
+		class="org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter">
+		<property name="messageConverters">
+			<list>
+				<bean
+					class="com.alibaba.fastjson.support.spring.FastJsonHttpMessageConverter">
+					<property name="supportedMediaTypes">
+						<list>
+							<value>text/plain;charset=utf-8</value>
+							<value>text/html;charset=utf-8</value>
+							<value>text/json;charset=utf-8</value>
+							<value>application/json;charset=utf-8</value>
+						</list>
+					</property>
+					<property name="features">
+						<list>
+							<value>WriteMapNullValue</value>
+							<value>WriteNullListAsEmpty</value>
+							<value>WriteNullStringAsEmpty</value>
+							<value>WriteNullNumberAsZero</value>
+							<value>WriteNullBooleanAsFalse</value>
+							<value>WriteDateUseDateFormat</value>
+							<value>DisableCircularReferenceDetect</value>
+							<value>QuoteFieldNames</value>
+						</list>
+					</property>
+				</bean>
+				<bean
+					class="org.springframework.http.converter.ByteArrayHttpMessageConverter">
+					<property name="supportedMediaTypes">
+						<list>
+							<value>image/jpeg</value>
+							<value>image/png</value>
+							<value>image/jpg</value>
+							<value>image/gif</value>
+							<value>application/x-bmp</value>
+						</list>
+					</property>
+				</bean>
+				<bean
+					class="org.springframework.http.converter.StringHttpMessageConverter">
+					<property name="supportedMediaTypes">
+						<list>
+							<value>text/html;charset=UTF-8</value>
+							<value>text/plain;charset=UTF-8</value>
+						</list>
+					</property>
+				</bean>
+				<bean class="org.springframework.http.converter.FormHttpMessageConverter">
+					<property name="supportedMediaTypes">
+						<list>
+							<value>text/html;charset=UTF-8</value>
+						</list>
+					</property>
+				</bean>
+			</list>
+		</property>
+	</bean>
+
+	<bean
+		class="org.springframework.web.servlet.view.ContentNegotiatingViewResolver">
+		<property name="order" value="0" />
+		<property name="contentNegotiationManager">
+			<bean
+				class="org.springframework.web.accept.ContentNegotiationManagerFactoryBean">
+				<property name="favorPathExtension" value="true" />
+				<property name="favorParameter" value="true" />
+				<property name="parameterName" value="format" />
+				<property name="ignoreAcceptHeader" value="true" />
+				<property name="mediaTypes">
+					<value>
+						json=application/json
+						xml=application/xml
+						html=text/html
+					</value>
+				</property>
+				<property name="defaultContentType" value="text/html" />
+			</bean>
+		</property>
+		<property name="defaultViews">
+			<list>
+				<bean class="com.alibaba.fastjson.support.spring.FastJsonJsonView" />
+			</list>
+		</property>
+	</bean>
+	
+	<bean id="multipartResolver"
+		class="org.springframework.web.multipart.commons.CommonsMultipartResolver">
+		<property name="maxUploadSize" value="100000000" />
+	</bean>
+
+    <bean class="com.qbao.store.response.CustomSimpleMappingExceptionResolver">
+        <property name="defaultErrorView" value="error/exception"></property>
+        <property name="defaultStatusCode" value="500"></property>
+    </bean>
+    
+    <!--以下是通用视图解析器，jsp视图 -->
+    <bean id="viewResolverCommon" class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+        <property name="prefix" value="/WEB-INF/pages/" />
+        <property name="suffix" value=".jsp" />
+        <property name="viewClass">
+            <value>org.springframework.web.servlet.view.InternalResourceView</value>
+        </property>
+    </bean>
+
+
+
+
+</beans>

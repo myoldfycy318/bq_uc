@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.qbao.store.mapper.sequence.SequenceMapper" >
+  <select id="queryNextVal" resultType="INTEGER" parameterType="java.lang.String" >
+    select _nextval("${sequenceName}");
+  </select>
+</mapper>
